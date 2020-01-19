@@ -1,0 +1,490 @@
+前后台交互与事件处理
+UEE提供事件处理组件fire，用于在浏览器端捕获事件（HTML Event / angularJS自定义事件），执行预定的前后台处理流程。
+
+fire组件封装了AJAX技术，为页面开发提供声明式的前后台异步交互和数据交换的能力。
+
+1. fire功能简介
+fire组件提供的功能主要包括：
+
+提交页面中的数据。
+执行用户脚本。
+触发校验与服务。
+处理服务器响应（正常与异常）。
+更新页面模型，触发页面DOM元素的变更。
+触发页面跳转或弹出窗口。
+2. fire执行流程
+fire组件经事件触发后，大致会按照如下的流程执行处理：
+
+fig1
+
+以上流程中涉及的各个环节均可通过fire的属性配置，具体的配置方法请参见3. fire使用指导。若不配置则不执行该环节。
+
+3. fire使用指导
+3.1 fire配置格式
+fire组件的配置格式如下：
+
+   <uee:fire 
+    bind="cssselector"
+    selector="selector"
+    event="click|dblclick|change|input|......|$customerEvent|$haha|$hoho|$anything"
+    init[="condition"]
+    region="$Root | $Model | a.b.c | ......"
+    params="[id:'083',name:'xiaoming']"
+    param-id="$Context.currentUser"
+    target="$Root | $Model | a.b.c | ......"
+    onbefore=" " 
+    onsuccess=""
+    onerror=""
+    onafter=""
+    script=""
+    controller=""
+    service="/app/content/query"
+    targetstep="target-step"
+    popup={
+        title : 'expression', 
+        width :'100px;|*50%;', 
+        height:'100px;|*50%',
+        src : 'expression',  //*.uslx页面
+        modal : true|false,
+        resizable: true|false
+    }
+    popin
+    /></uee:fire>
+3.2 使用fire处理控件事件
+在界面操作UI的过程中，控件会触发相应的事件，比如button会触发click、dbclick等事件，有时我们需要根据界面事件做不同的js逻辑处理。下面是最简单的把事件接收到javascript脚本的用法。
+
+  <button class="test-button">
+    test button
+    <uee:fire script="testAlert()"></uee:fire>
+  </button>
+  <script>
+    testAlert = function(){
+        alert("test buton");
+    }
+  </script>
+以上示例直接把fire指令写到需要事件响应的控件内部，并没有指定事件类型，这是一个简写的方式，因为fire指令默认处理直接父节点的click事件。
+
+完整的写法是通过bind和event按照如下格式来书写:
+
+  <!-- 这里放置页面dom元素 -->
+  <button class="test-button">
+    test button
+  </button>
+  <!--这里放置事件处理 -->
+  <uee:fire bind=".test-button" event="click" script="testAlert()"></uee:fire>
+  <!--这里放置js代码 -->
+  <script>
+    testAlert = function(){
+        alert("test buton");
+    }
+  </script>
+这里bind属性来指定fire要处理的事件所在dom，格式是一个css选择器，event属性用来指定浏览器支持的事件类型。
+
+注意： 在指定事件的dom时，除了可以使用bind属性，还可以使用selector属性作为bind的进一步的刷选选择器，例如：
+
+    <ul id="mygroup">
+        <li class="myitemA">myitem</li>
+        <li class="myitemB">myitem</li>
+        <li class="myitemA">myitem</li>
+        <li class="myitemB">myitem</li>
+    <ul>
+     <!--仅选取mygroup下面myitemA类型的item -->
+    <uee:fire bind="#mygroup" selector=">.myitemA" event="click" script=""></uee:fire>
+除了可以处理浏览器支持的click dbclick mouseenter等原生的事件外还可以处理angularJS的事件和自定义事件。下面是一个触发自定义事件然后并响应自定义事件的例子：
+
+  <button class="test-button-emit">
+    test button
+  </button>
+  <uee:fire bind=".test-button-emit" event="click" script="testButtonEmit()"></uee:fire>
+  <uee:fire bind="" event="$testbuttonclicked" script="handleButtonEmit()"></uee:fire>
+  <script>
+    testButtonEmit = function(){
+      this.$Emit("$testbuttonclicked");
+    }
+    handleButtonEmit = function(){
+      alert("$testbuttonclicked event emited by test button ");
+    }
+  </script>
+因为自定义事件是全局的，所以我们可以通过自定义事件在不同模块之间进行信息传递， 具体$Emit的用法可以参考angular官方API说明。
+
+3.3 正确的书写script函数
+fire可以用来直接关联js逻辑函数，包括：
+
+onsuccess：调用服务请求成功后被调用
+onerror：调用服务请求失败后被调用
+onbefore： 执行一切逻辑之前被调用
+onafter：调用服务后被调用
+script：调用服务之前的主要js逻辑执行体
+在前面的fire执行流程图中已经比较明确的标识出不同js的执行顺序，下面主要介绍script的正确书写方式。
+
+正确的书写样例：
+
+    <button class="test-button">
+      test button
+    </button>
+    <uee:fire bind=".test-button" event="click" script="testButton()"></uee:fire>
+    <script>
+      var testButton = function(){
+        console.log("test button");
+      }
+    </script>
+直接定义一个全局的函数testButton, 当触发click事件时testButton被执行， 其执行的作用域this是Scope对象，具体使用方法可以参照angular官方API说明。 比较常用的API有：
+
+$watch
+$digest
+$apply
+$emit
+$on
+除了这些，UEE还扩展了如下方法：
+
+$Get 获取服务， UEE实现的的服务有$Fire $UEE等。
+now 获取当前时间。
+除了方法， 一些内置模型变量如：
+
+$Page
+$Model
+$Property
+$Params
+$Global
+$Webapp
+……
+也是直接挂在作用域scope对象上，可以直接获取， 例如：
+
+    <button class="test-button">
+      test button
+    </button>
+    {{$Model.testbuttonName}}
+    <uee:fire bind=".test-button" event="click" script="testButton()"></uee:fire>
+    <script>
+      var testButton = function(){
+        var log = this.$Get("$log");
+        log.info("test-button");
+        this.$Model.testbuttonName = "test-button";
+      }
+    </script>
+这个例子中获取了$log服务打印了一行日志，然后设置了$Model.testbuttonName变量内容显示到html上。
+
+除了在js代码中通过作用域的方法来获取相关服务和模型，还可以直接把服务和模型作为参数传进来：
+
+    <button class="test-button">
+      test button
+    </button>
+    {{$Model.testbuttonName}}
+    <uee:fire bind=".test-button" event="click" script="testButton($Model, $Get('$log'))"></uee:fire>
+    <script>
+      var testButton = function(model, log){
+        log.info("test-button");
+        model.testbuttonName = "test-button";
+      }
+    </script>
+3.4 使用$Controller更好的组织js代码
+前面的样例的代码，大量定义了全局的js函数，当函数越来越多时，很难保证不会冲突重名。
+
+所以我们需要一个命名空间，可以自己定义命名空间然后通过init属性来初始化自定义的前端变量：
+
+    <button class="test-button">
+      test button
+    </button>
+    {{$Model.testbuttonName}}
+    <uee:fire init script="myApp.myModule1.init()"></uee:fire>
+    <uee:fire bind=".test-button" event="click" script="myApp.myModule1.testButton($Get('$log'))"></uee:fire>
+    <script>
+      myApp = window.myApp || {};
+      myApp.myModule1 = myApp.myModule || {};
+      var that = myApp.myModule1;
+      angular.extend(myApp.myModule1, {
+        init:function(){
+          that.logString = "test-button";
+        },
+        testButton:function(log){
+          log.info(that.logString);
+        }
+      })
+    </script>
+但是，UEE通过$Controller可以更好的组织以上代码：
+
+    <button class="test-button">
+      test button
+    </button>
+    {{$Model.testbuttonName}}
+    <uee:fire init controller="$Controller.myApp.myModule1.init"></uee:fire>
+    <uee:fire bind=".test-button" event="click" controller="$Controller.myApp.myModule1.testButton"></uee:fire>
+    <script>
+        $Controller("myApp.myModule1", {
+            init:function(){
+              $Controller.myApp.myModule1.logString = "test-button";
+            },
+            testButton:function($log){
+              $log.info($Controller.myApp.myModule1.logString);
+            }
+        })
+    </script>
+以上代码帮助我们省略了定义命名空间的繁琐，controller属性是script功能另一种写法，直接书写调用的方法名称，支持依赖注入, 我们使用了$log服务，只需要声明即可。
+
+说明： controller是script的另一种实现。很遗憾，暂时没有相对应的功能来替换 onbefore、onafter、onsuccess、onerror等js函数。
+
+3.5 使用selector和jEvent更高效的处理事件绑定
+设想如下代码：
+
+    <ul>
+        <li ng-repeat="item in $Model.demoArray">
+          {{item.name}}
+             <uee:fire controller="$Controller.demoController.demoFun1"></uee:fire>
+        </li>
+    </ul>
+    <uee:fire init controller='$Controller.demoController'></uee:fire>
+    <script>
+        $Controller("demoController", function($Model, $log){
+            $Model.demoArray = [];
+            for (var i = 10 - 1; i >= 0; i--) {
+                $Model.demoArray.push({
+                    name:'item' + i
+                });
+            };
+            angular.extend($Controller.demoController, {
+                demoFun1: function(item){
+                    $log.log(item.name);
+                }
+            });
+        });
+    </script>
+迭代并显示了一个数组，点击一行时打印了一行日志显示行信息。代码很好，但是需要知道：虽然这里代码中只有一个fire指令，但因为这个指令是在迭代内，所以会被执行多次，当demoArray的长度超过上百甚至上千条时，就需要考虑性能问题。
+
+我们完全可以通过bind和selector把fire挪到外面来：
+
+    <ul>
+        <li ng-repeat="item in $Model.demoArray">
+          {{item.name}}
+        </li>
+    </ul>
+    <uee:fire bind="ul" selector=">li" controller="$Controller.demoController.demoFun1"></uee:fire>
+但这样会出现一个问题，即这里的上下文 items获取不到了， 如下的js代码取不到item对象。
+
+                demoFun1: function(item){
+                    $log.log(item.name);
+                }
+这个时候我们需要通过jEvent对象来获取相关参数，jEvent是jquery封装的事件对象，同时UEE对其做了扩展：
+
+jEvent.$Target // 发生事件的绑定对象
+jEvent.$Scope() // 发生事件的绑定对象所对应的scope
+最终完整的优化代码如下：
+
+    <ul>
+        <li ng-repeat="item in $Model.demoArray">
+          {{item.name}}
+        </li>
+    </ul>
+    <uee:fire bind="ul" selector=">li" controller="$Controller.demoController.demoFun1"></uee:fire>
+    <uee:fire init controller='$Controller.demoController'></uee:fire>
+    <script>
+        $Controller("demoController", function($Model, $log){
+            $Model.demoArray = [];
+            for (var i = 100 - 1; i >= 0; i--) {
+                $Model.demoArray.push({
+                    name:'item' + i
+                });
+            };
+            angular.extend($Controller.demoController, {
+                demoFun1: function(jEvent){
+                    $log.log(jEvent.$Scope().item.name);
+                }
+            });
+        });
+    </script>
+3.6 使用service来调用后端服务
+fire指令支持直接绑定请求到后端服务，service是独立的。
+
+对于restful的服务，通常使用service=”a/b/c”这样的url来调用后台服务。关于restful服务的详细介绍请参见REST服务开发。
+
+示例：
+
+  <business name="bs1">
+  </business>
+  <button>
+    button service
+    <uee:fire service="bs1/srv1"></uee:fire>
+  </button>
+service="bs1/srv1"请求的url是http://localhost:19988/uee/business/bs1/srv1?t=1407295089404
+
+3.7 使用param-xx或者params给后端传递参数
+param-xx
+用于传递一个参数。
+配置示例：param-id="$Context.currentUser"，表示传递一个参数，名为id，值为$Context.currentUser的值。
+param-xx可以配置为字符串，或者$Root、$Model、$Page、$Context开头的前台表达式。
+params
+用于传递多个参数。
+配置示例：params="{id:'083',name:'xiaoming'}"，表示传递两个参数：id和name，值分别是083和xiaoming。
+params与param-xx类似，都可以传递字符串和前台表达式。
+示例：
+
+  <uee:fire service="bs1/srv1" param-name="'xiaoming'"></uee:fire>
+也可以写成
+
+  <uee:fire service="bs1/srv1" params="{name: 'xiaoming'}"></uee:fire>
+注意这里param-name参数格式是表达式，所以字符串需要添加''， 变量表达式不需要''，如下：
+
+  <uee:fire service="bs1/srv1" param-name="$Model.name"></uee:fire>
+  <uee:fire service="bs1/srv1" params="{name: $Model.name}"></uee:fire>
+3.8 使用target将服务的返回数据更新到前台模型上
+请求后端服务后，我们需要将返回的结果刷新到前台模型上， 因此需要target来指定刷新到前台的哪个模型。
+
+下面的UEE中hello中的代码发生了什么呢？
+
+    <uee:fire selector="#userButton" 
+        event="click" 
+        service="demo/hello/queryAccount"
+        param-number="$Page.account.number"
+        target="$Model.account.name">
+    </uee:fire>
+当fire被触发时， API接口的http请求中playload中携带了target参数。
+
+{"model":null,"params":{"number":"Miss HeHe"}}
+响应的结果中会返回该target的value：
+
+"stranger Miss HeHe"
+最终前台的UEE代码中会把target value赋值到前台的$Model.account.name中。
+
+3.9 使用targetstep进行business（页面）跳转
+在business场景中，常常会包含多个业务步骤（step）。执行完一个步骤后，常需要跳转到下一个步骤，执行完此步骤后又可能需要返回到前一个步骤，等等。
+
+fire组件提供targetstep属性，可以指定跳转的目标步骤。
+
+示例：
+
+  <business name="b1">
+    <step name="s1" view="s1.html"></step>
+    <step name="s2" view="s2.html"></step>
+  </business>
+  <uee:page></uee:page>
+  <button>
+      go s2
+      <uee:fire targetstep="s2"></uee:fire>
+  </button>
+  <button>
+      go s1
+      <uee:fire targetstep="s1"></uee:fire>
+  </button>
+注意： targetstep在执行后台请求错误的时候不会跳转。
+
+3.10 使用region提交数据到后台并校验
+region配置为$Root、$Model开头的基于前台模型的表达式，例如$Root.a.b.c、$Model.e.f等，用来将前台相应的值提交到后台，供后台服务使用。 region提交的数据，会根据表达式自动修改后台模型。
+
+示例：
+
+<uee:fire init region="$Model.regionList" target="$Model.regionList" onafter="manages.selectedRootNode(this,'101')" ></uee:fire>
+3.11 弹出窗口 （popup、popin）
+fire组件提供popup和popin属性，分别用来弹出一个窗口和关闭该窗口。
+
+popup
+popup接受传入一个json格式的字符串（类似options），其内部支持配置的属性如下：
+
+ popup={
+        title : 'expression',   //弹出窗的标题
+        width :'100px;|*50%;',  //弹出窗的宽
+        height:'100px;|*50%',   //弹出窗的高
+        src : 'expression',     //弹出窗中显示的页面地址，可以是usl页面或html页面
+        modal : true|false,   //是否为模态弹出（默认值为true）
+        resizable: true|false //是否可以改变弹出窗大小
+    }
+注意： 如果fire配置了popup中的src，同时也配置了targetstep属性，则targetstep属性将被popup中配置的src覆盖。
+
+示例：
+
+<uee:fire popup="{'title' : 'POP FROM FIRE','width' : '500px','height' : '430px','src':'test.uslx'}">
+popin
+popin属性不接受参数。只需要在fire中写popin，则该fire将会关闭当前的弹出窗。
+
+示例：
+
+<uee:fire popin></uee:fire>
+popup和popin结合使用
+示例：
+
+  <button>
+    popup
+     <uee:fire popup="{'title' : 'POP FROM FIRE','width' : '500px','height' : '430px','src':'popup.html'}">
+     </uee:fire>  
+  </button>
+  <button>
+      popin
+      <uee:fire popin></uee:fire>
+  </button>
+3.12 在js代码中使用$Fire服务
+除了使用fire标签执行相关逻辑与后台交互外，还可以直接在js代码中调用$Fire与后台进行交互。
+
+使用方法
+$Fire(options, scope)
+
+参数
+options
+options.onbefore:
+options.onsuccess:
+options.onerror:
+options.onafter:
+options.script:
+options.controller:
+options.service:
+options.region:
+options.params:
+options.param-id:
+options.target:
+options.popup:
+options.popin:
+scope：作用域
+以上参数同标签fire的属性是对应的，除了调用js的地方是直接书写js的函数体外，其他参数格式是一致的。示例如下：
+
+  <button>
+    test fire service
+    <uee:fire script="testFire($Get('$Fire'))"></uee:fire>
+  </button>
+  <script>
+    var testFire = function($Fire){
+        var t = 'ff';
+        this.$Page.name = "xiaoming";
+        $Fire({
+             'param-a':t,
+             'param-name':this.$Page.name,
+             'param-age': 14,
+             'param-company':'google',
+             onerror: function(){
+              console.log("onerror");
+             }
+         }, this);
+    };
+  </script>
+返回值
+onsuccess：同options.onsuccess
+onerror：同options.onerror
+onafter：同options.onafter
+返回结果支持链式调用：
+
+$Fire(options, scope)
+.onsuccess(function(){
+  })
+.onerror(function(){
+  })
+.onafter(function(){
+  })
+3.13 使用validate属性指定一块区域进行校验
+fire中的validate配置为selector选择器，例如“#gadget044”等，按指定的选择器区域进行前端校验，来支持gadget外面需要触发gadget内部的校验。
+
+示例：
+
+<uee:gadget name="uee:gadget044" id="gadget044" length044="1" required044="1" number044="1">
+</uee:gadget>
+<uee:button style="width:200px" id="validategadget">外部button 校验gadget
+<uee:fire validate="#gadget044"></uee:fire>
+</uee:button>
+3.14 使用domain实现跨域数据请求访问
+fire中的domain配置为域外的URL链接，可以实现跨域的数据请求访问功能。有两种实现方式：
+
+页面引用的js中统一配置：
+$UEE.$Domain = "http://10.135.xx.xx:19998/UCEC"
+在fire上配置：
+<uee:fire service="a/b" domain="http://10.135.xx.xx:19998/UCEC" ....>
+4. 附录
+HTML原生的常用鼠标事件和表单事件汇总如下：
+
+fig2
+
+更详细的HTML原生事件，请参见HTML DOM Event原生事件大全。
