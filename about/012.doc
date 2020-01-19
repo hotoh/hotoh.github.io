@@ -1,0 +1,142 @@
+3	Bp.xml流程
+3.1	【规则】为在查询订单的界面上展示流程节点中文名称，要求流程节点displayName用中文。
+3.2	【建议】流程图结构清晰，各分支逻辑明确展示。
+代码提交时，*.bp.xml与*.bp.json文件一起归档。防止其他人更新代码后，ds工具展示流程走向变成直线。
+3.3	【规则】	新增的bp业务，批量字典和单个字典都需要加上，在查询订单页面和操作日志查询菜单上正确展示业务编码。
+批量字典：OM_BULK_BUSINESSCODE
+单个字典：OM_BUSINESS_CODE
+4	BS
+4.1	【建议】二次开发文档未暴露的服务，BP侧不可直接使用。可以先封装后再暴露出服务给BP使用。
+4.2	【建议】对于从外围（非本bp）获取到的对象，不要修改对象内容。建议将对象赋值给临时变量后再使用。
+如下举例会更新数据库（queryExtItemValueByPropId虽然命名为查询方法，但是具有更新数据库的能力），导致后续业务异常。
+ 
+
+4.3	【规则】关注bs的超时时间，默认60s，极端场景下跟SE申请增大超时时间
+4.4	【规则】禁止在Actions标签里使用静态编译强类型校验标识enable-static-compile="true"
+<actions enable-static-compile="true">这样配置，有时会造成脚本编译失败。为了避免不必要的编译异常隐患，禁止使用该标识。
+5	Function
+5.1	【规则】由于function元数据属于全局，为防止与其他套件、bp定义的fucntion同名冲突，iot定义的function须以iot_开头；为区分RetailShopPortal与其它节点上的function，须以iot_omin_开头。
+eg:iot_getLogger。
+5.2	【规则】优先使用已有函数，避免产生逻辑重复的代码。
+已有函数列举如下。
+系统函数、内置函数：
+http://bes.huawei.com/hedex/hdx.do?lib=commerce26000&v=01&tocLib=commerce26000&tocV=01&id=ZH-CN_TOPIC_0054873773&tocURL=resources%252fboms%255fdev%252fboms%255fdev%252fbusinssScript%252fzh%252dcn%255ftopic%255f0054873773%252ehtml&p=t&fe=1&ui=3&keyword=function
+
+前端渠道函数、订单管理函数、客户管理函数、Common函数：
+http://bes.huawei.com/hedex/hdx.do?tocLib=commerce25100&tocV=01&id=generateOrderId&tocURL=resources%252fboms%255fmeta%252fom%252fzh%255fCN%252fhtml%252finf%252fFunction%252fgenerateOrderId%252ehtml&p=t&fe=1&ui=3&keyword=generateorderid
+
+5.3	【规则】BP内部使用的function放在业务BP中，多BP公共使用的function放到IOT_Common_CTZ中。注意文件名、function名、方法功能需描述清楚，便于使用时查阅理解。
+6	缓存
+6.1	【规则】缓存的内容对象禁止直接作为出参返回，需要做值拷贝后再返回。
+7	同步第三方
+7.1	【规则】新增接口调用，默认记录CLE表订单号。
+如：IotBulkDeleteAcctNotifySubscriptionDataBP.bulkProcessor.xml
+def Header = $BC("com.huawei.bes.inf.iot").TransPtPlatformCommonHeader.make([
+    BeId:order?.beId as String,
+    IotBusiTransId:order?.bulkOrderId as String
+]);
+7.2	【规则】接口调用，要判断返回码，返回码成功才算接口调用成功。调用服务（例如createOrder）也要判断返回码。调用没有异常不代表业务成功。
+如：
+if (ebossCommonRsp?.Resp?.ResultCode != '0') {
+    def result = ebossCommonRsp?.Resp;
+    def errMsg = result?.ResultCode + ':' + result?.ResultDesc;
+    throw ErrorCode.EBOSS_SYNC_USER_ERROR([p0 : errMsg]);
+}
+7.3	【规则】操作员录入的文本传递给第三方，接口xml报文中相关字段要用CDATA包裹。
+如：ExtActiveSubsReq2CreateOrderTransf.transf.xml
+ 
+7.4	【规则】同步运管加上对闪断码的判断。
+如：IotBulkCreatesubNotifyCCMPOutParamTansf.transf.xml
+if (req?.resultCode == "14810001") {
+    def message = req?.resultCode + ":" + req?.resultDesc;
+    //throw ErrorCode.OPU_EXECUTION_EXCEPTION([p0:message]);
+    throw_exception_param('BPU_CTZ_ERROR',  [p0 : message]);
+}
+7.5	【规则】外调内接口要按照接口协议进行枚举值和是否必填的校验。
+如：IotSuspendResumeService.bs.xml
+<parameter name="operType" required="true" validator="regExp('^stop|open$')"></parameter>
+7.6	【规则】对外接口报文中beid字段传后3位，CRM传递给IF是4位，IF传递给外围是3位。
+7.7	【规则】涉及调用外围服务，增加异常处理逻辑，以免外围服务因代码报错影响后面的处理逻辑。
+7.8	【规则】外调内的接口中INF侧要主动设置正确的操作员及上下文信息。
+需要输出必要上下文范围，BP开发需要了解IF侧塞的上下文内容。
+参考：【规则】后台业务开发、定时任务、接口开发过程中，设置上下文时，必须包含的如下5个键值：BE_ID、BIZ_BE_ID、OPERATOR、DEPT_ID、CHANNEL_TYPE
+7.9	【规则】与第三方交互时，BP侧按异常场景返回唯一的错误码，IF负责将错误码按协议转换后返回给第三方。
+错误码，通过SQL管理工具的“错误码申请”来实现唯一错误码的获取。例如：601070319000002
+
+举例，错误代码：
+if (!serviceNumber) {
+response.returnCode = "-4499";
+response.returnMsg = "用户服务号码入参为空";
+return response;
+}
+正确代码：
+if (!serviceNumber) {
+response.returnCode = "601070319999002";
+response.returnMsg = "用户服务号码入参为空";
+return response;
+}
+
+8	validate
+8.1	【规则】校验项写在前台的，是可以通过工具绕过校验的，需要有后台校验。这个应该要明确下来哪一类的校验必须同步增加到后台校验项里。
+9	文件上传/下载
+9.1	【规则】	临时文件要用完自己清理掉。
+如：ESimCardValidateService.bs.xml
+file.delete();
+9.2	【规则】	临时文件命名保证唯一，调用公共function实现。
+如：ESimCardValidateService.bs.xml
+def fileDir = FacadeFactory.getFileConfiguration().getString("batch.file.dir", System.getProperty("user.dir"));
+def fileName = fileDir + File.separator + "BulkCreateSubscribers" + getNowDate().getTime() + (int)(Math.random()*10000);
+try {
+    file = new File(fileName + ".txt");
+} catch(Exception e)
+{
+    log.error "IotWriteCardValidate create file Exception " + e;
+}          
+10	订单/订单项识别
+10.1	【规则】订单识别的规则脚本不要使用$BindingContext('orderContext')._OrderModel?.requestMessage这样方式获取前台请求报文
+对于订单识别(业务规格识别)，om框架内置了request和_request两个绑定变量，脚本内可以直接使用上述两个变量来访问前台请求com.huawei.bes.om.extpub.plugin.CreateOrderRequest
+对于订单项识别，om框架内置了request和_request两个绑定变量，脚本内可以直接使用上述两个变量来访问前台请求中的指定订单项（业务规格识别后触发的场景）和新建OrderModal上的订单项(请求转换和订单补充新建订单项触发的场景)
+使用框架内置变量写法简单明了，执行效率也高。
+10.2	【规则】识别的规则脚本相同语义的表达式建议统一写法，提高框架缓存命中率
+新增识别条件时，统一使用如下方式。
+订单识别常用条件：
+_request.order.businessCode  //业务编码识别
+_request.getVoTypeName()          //请求类型
+_request.requestHeader.channelType   // 受理渠道
+_request.order.beId    //受理BeId
+订单项识别常用条件：
+_request.itemType               //订单项类型
+_request.actionType        //动作类型
+_request.applyObjType           //应用对象类型
+$BindingContext('orderContext')._OrderModel.requestMessage.order.businessCode   //业务编码识别
+$BindingContext('orderContext')._OrderModel.requestMessage.getVoTypeName()    //请求类型
+
+统一写法的原因分析：
+目前识别引擎第一次识别时，会把所有的识别规则脚本统一收集并缓存起来，缓存的key是就是表达式的内容，不同的识别文件通过占位符来描述本文件所使用的所有规则中的部分规则，同时缓存占位符和决策表值的对应关系。后面的识别过程中，所有的识别规则表达式只执行一次，然后遍历不同占位符和决策表值，获取识别结果。而缓存的过程中，对应订单识别
+BindingContext('orderContext')._OrderModel?.requestMessage?.getVoTypeName()
+_request.getVoTypeName()
+request.getVoTypeName()
+request?.getVoTypeName()
+上述几个个表达式都是相同的语义，但是要分别缓存，后面要重复表达式求值，影响效率。建议统一写法,
+绑定变量使用只使用request，访问属性统一用？.
+业务规格识别中：
+request?.getVoTypeName() //获取请求类型
+request?.order?.businessCode //获取业务编码
+订单项规格识别中：
+BindingContext('orderContext')._OrderModel.requestMessage?.getVoTypeName() //获取请求类型
+BindingContext('orderContext')._OrderModel.requestMessage?.order?.businessCode /获取务编码
+request?.itemType //获取订单类型
+详细参考：http://3ms.huawei.com/hi/group/2028593/wiki_4902115.html?for_statistic_from=all_group_wiki
+11	OPU
+11.1	【规则】OPU命名规范
+OPU命名采用分层四段式结构，每一段英文拼写采用驼峰式，结构为：[前缀]+[模块]+[业务语义]+Opu；
+[前缀] 按OPU层次类型分为：Func（功能级）、Sys（系统级）、Intf(接口级)
+[模块] 按模块缩写分为：Om、Sm、Cm、Common、Inv、Pm、Cbs、Prov、Prom、Bp、Oss、Shipping、OneLink（运管平台）、BOSS（省BOSS）、BBoss（一级BOSS）、EBOSS（政企平台）、CTRM （一级营销终端管理系统）等其它 “第三方系统缩写”
+[业务语义] 采用富有意义的英文词汇，驼峰式拼写，例如改用户状态：ChangeSubsStatus
+ 
+综上命名规范，举例命名如下：
+客户资料归档  FuncCmCustInfoArchiveOpu、SysCmCustInfoArchiveOpu、IntfCmCustInfoArchiveOpu
+号卡资源回收  FuncInvTelAndSimRecycleOpu、SysInvTelAndSimRecycleOpu、IntfInvTelAndSimRecycleOpu
+物流发货      FuncShippingSendOutGoodsOpu、SysShippingSendOutGoodsOpu、IntfShippingSendOutGoodsOpu
+帐户资料同步  FuncCbsAcctInfoSyncOpu、SysCbsAcctInfoSyncOpu、IntfCbsAcctInfoSyncOpu
+施工通知OSS   FuncOssConstructionNoticeOpu、SysOssConstructionNoticeOpu、IntfOssConstructionNoticeOpu
