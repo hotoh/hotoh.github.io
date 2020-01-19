@@ -1,0 +1,231 @@
+16	Arrays遍历
+16.1	【样例】Find\findAll\grep遍历list注意判空
+异常代码举例：
+def newCardIccid = orderItemIdentity.find{it.actionType == 'A' && it.idenTypeId == 5}.prodIdenValue; // 取iccid识别码对象上的值，prodIdenValue 之前对象是空时，报空指针
+
+FilterOrderItems.grep{it.itemType == 'offering' && it.isMainItem == 'Y'}?.get(0)?.itemId // 获取订单主offerId, get(0)之前的列表长度是0时，报数组越界。java.lang.IndexOutOfBoundsException: Index: 0, Size: 0
+
+def orgIdStr = querySimCardResp?.simCards?.orgId[0]; // 取某sim卡列表下的orgId字段，当[0]之前对象长度是0时，脚本正确常返回空；当simCards为null时，报空指针。
+
+16.1.1	【样例】取list的第一个元素，何时需要判空
+场景1：遍历列表里有匹配结果
+def t = [1, 2, 3, 2]
+def find2 = t.find{it == 2}
+assert find2 == 2
+def findAll2 = t.findAll{it == 2}
+assert findAll2 == [2, 2]
+def grep2 = t.grep{it == 2}
+assert grep2 == [2, 2]
+场景2：遍历列表里没有匹配结果，并且存在null元素
+def t = [1, 3, null]
+def find2 = t.find{it == 2}	// it不需要判空。当it为对象时，常有人写出it?.property, 这里的?.操作多余
+assert find2 == null	// 使用find2对象时，要判空
+def findAll2 = t.findAll{it == 2}
+assert findAll2 == []	// 使用findAll2对象时，要判断list长度
+def grep2 = t.grep{it == 2}
+assert grep2 == []	// 使用grep2对象时，要判断list长度
+场景3：遍历列表为空
+def t = null
+def find2 = t.find{it == 2}	// t不需要判空。常有人写出t?.find{…}, 这里的?.操作多余
+assert find2 == null
+def findAll2 = t.findAll{it == 2}	// 同find
+assert findAll2 == []
+def grep2 = t.grep{it == 2}	// 同find
+assert grep2 == []
+
+16.1.2	【样例】取list的第一个元素，如何判空
+取list的第一个元素，常见的有[0] 、get(0) 、 getAt(0)三种方式，推荐使用[0] 和 getAt(0)，因为[0]编译后会被翻译成getAt(0)，getAt(0)有对索引的容错处理，当index越界时，返回null，而不会抛异常。推荐使用举例：
+FilterOrderItems.grep{it.itemType == 'offering' && it.isMainItem == 'Y'}.getAt(0)?.itemId // 获取订单主offerId，之前的get(0)前的 ?. 修改为 . ，get(0)修改为getAt(0)
+
+def orgIdStr = querySimCardResp?.simCards?.orgId?.getAt(0) // 取某sim卡列表下的orgId字段， 这前的orgId[0]修改为orgId?.getAt(0)。
+
+16.2	【规则】循环内避免调用接口，尤其是外围bs服务、访问数据库的bo，须使用批量接口替换。不能替换的，从业务侧分析耗时，优化调用方式，确保性能可接受。
+举例1：循环内调bs
+def supplementaryOfferingList = querySubscriberRsp?.subscriberList.get(0)?.supplementaryOfferingList;
+supplementaryOfferingList.each{offer ->
+    def queryDictRequest = $BC("com.huawei.bes.common.base.datadict").DataDictQueryRequest.make([
+            dataDictCode: "SUSPEND_PROD_MODIFY_PROP_VALIDATE"
+    ]);
+    def queryDictRsp = callBusinessService("com.huawei.bes.common.base.datadict.DataDictQueryService", "queryDataDict", queryDictRequest);	// each遍历时，每次都要查询同一字典，当supplementaryOfferingList.size较大时，就存在很多不必要的耗时了。可以把此查询调整到each外部
+    def prodIdList = queryDictRsp?.dictItems.itemCode;
+    if( offer.prodBasic?.prodId.toString() in prodIdList){
+        ...
+        ...
+    }
+}
+举例2：循环内调bo访问数据库
+   for(unclosedOrder in unclosedOrderList){
+       def unclosedOrderItemList =OrderItemBO.queryOrderItem(OrderItem.make(["orderId":unclosedOrder.orderId,"status":null]));  //此查询耗时，订单较多时导致服务调用超时
+       for(unclosedOrderItem in unclosedOrderItemList){
+           if(curSubList.contains(unclosedOrderItem.groupSubsId as String))
+           {
+               …… ……
+               break;
+            }
+        }
+    }
+17	【样例】Map集合中key默认是字符串，当key的是变量的时候，使用(key)语法来获取变量值对应的key
+def key = 'name'
+def person = [key: 'Guillaume']// person key的值是字符串key，而不是字符串name
+person = [(key): 'Guillaume'] // person key的值是字符串name了
+
+18	String拼接
+18.1	【规则】使用StringBuilder拼接字符串，不允许连续使用“+”，实测性能差距超过100倍:
+def "TestFileB"()
+{
+	def file = new File("H:\\TEST\\textB")
+	def start = System.currentTimeMillis()
+	StringBuilder buf = new StringBuilder()
+	for (int i= 0 ; i < 20000 ;i ++)
+	{
+		buf.append("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAa\n")
+	}
+	file.append(buf.toString())
+	println "append many Times cost:"+ (System.currentTimeMillis()-start) / 1000+ "s"
+	//0.077s
+}
+def "TestFileC"()
+{
+	def file = new File("H:\\TEST\\textC")
+	def start = System.currentTimeMillis()
+	String buf = ""
+	for (int i= 0 ; i < 20000 ;i ++)
+	{
+		buf = buf + "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAa\n"
+	}
+	file.append(buf.toString())
+	println "append many Times cost:"+ (System.currentTimeMillis()-start) / 1000+ "s"
+	//28.378s
+}
+
+
+18.2	【规则】拼接字符串时，酌情使用字符串占位符，超过5处占位时禁止使用。
+单引号字符串 eg:'a single quoted string'，单引号字符串类型是java.lang.String，不支持占位符变量。
+双引号字符串 eg:"a double quoted string"，支持占位符，占位符变量以$开头或者${占位符变量} 。双引号字符不含占位变量的情况下类型为java.lang.String，如果包含占位变量则类型变成groovy.lang.GString。
+
+eg:
+def name = 'Guillaume' // a plain string
+def greeting = "Hello ${name}"
+assert greeting.toString() == 'Hello Guillaume'
+def person = [name: 'Guillaume', age: 36]
+assert "$person.name is $person.age years old" == 'Guillaume is 36 years old' 
+
+18.3	【规则】对象转String时，注意对象是否为 null。尤其是字符串拼接时，null + ‘’ 或 null.toString() 会被转成 “null”。
+
+Eg:
+def a = null;
+assert (a as String) == null
+assert (a.toString()) == “null”
+assert (a + '') == “null”
+18.3.1	字符串截取获取前先判断字符串长度（原因：如果BigDecimal格式以0开头，到后台会自动丢掉0，如果不判断长度，直接截取字符串，数据会错误）
+19	日志处理
+19.1	【规则】禁止使用println打印日志，统一使用引擎提供的日志能力：log.debug;
+19.2	【规则】groovy里打印对象时，使用iotToJsonStr（function）方法 或 IotAnonymousUtils.iotToJsonStr() （java工具类）转换为标准json打印。此方法可控制敏感信息。
+19.3	【废弃】打印对象时，使用com.alibaba.fastjson.JSONObject.toJSONString等方法转换为标准json格式打印
+log.debug("decompose orderModel:"+ toJSONString(orderModel))
+如果不使用toJSONString,直接打印复杂对象某些情况会报堆栈溢出的错误，而且格式不是标准json，不方便数据查看。由于toJSONString不具备敏感信息模糊化功能，打印复杂对象注意敏感信息。
+
+19.4	【废弃】涉及敏感信息时，使用加密方法打印对象。Shop节点脚本使用objectToJsonStr ，其他节点脚本使用object2AnonymousJsonString
+现有转换方法如下:
+1、object2JsonString （function） 对应class="com.alibaba.fastjson.JSONObject" method="toJSONString"；打印效果不加密，如下：
+ 
+
+2、object2AnonymousJsonString （function） 对应 class="com.huawei.bes.om.base.order.core.utils.LogAnonymousUtil" method="toAnonymousJsonString"；打印加密（加密字段要配置AnonymousFields.xml）效果如下：
+ 
+
+3、com.huawei.soa.bdf.util.BdfUtils.maskEntity()；打印加密（依赖entity里的mask配置），效果如下：
+ 
+
+4、objectToJsonStr  （function）对应 class="com.huawei.bes.omni.base.util.utils.FunctionUtil" method="objectToJsonStr"；打印加密（依赖entity里的mask配置， besUnionConfig.properties 里的sensitivewords配置）。
+
+19.5	【规则】脚本有返回值的，最后执行的语句不能是日志打印
+Groovy中方法或者闭包中最后一句执行的语句的值会作为返回值的，所以return语句可以省略。
+int add(int a, int b) {
+    return a+b
+}
+assert add(1, 2) == 3
+Can be shortened to:
+int add(int a, int b) {
+    a+b
+}
+assert add(1, 2) == 3
+由于没有注意这个语言特性，比较常见的问题是， opu的判断条件里，没有显式的使用return语句，里面用log.debug打印部分信息， log.debug作为最后执行的语句，log.debug的返回值为null，导致整个Conditon表达不为ture，无法执行对应的opu。
+现在转换后的最终报文及结构框架默认都*号代替了，不方便调试定位问题，可以参考如下方式的打印，注意不要打印敏感信息。
+def reuslt = builder.order {
+    orderId(g_orderId)
+    beId(g_beId)
+    versionId("0")
+。。。。。。。
+}
+。。。。。
+log.debug "reuslt:" + toJSONString（reuslt）
+return result
+
+19.6	【规则】脚本中禁止打印用户密码、用户证件号、银行卡等敏感信息。开发过程中可在本地添加此类调试信息，调试完毕后须将相关调试信息删除后再提交; 
+19.7	【规则】禁止使用log.error打印调试日志，调试日志使用log.debug.
+error日志一般都会开启，log.error打印调试日志会影响系统性能，尤其打印比较复杂的对象。
+函数和因子中log.debug 打印日志时会默认打印到bdf里，bdf日志默认是error，所以默认不显示。
+可以通过在log4j.xml开启函数和因子的debug日志打印，而不是通过log.error来打印调试日志：
+  <category name="com.huawei.soa.bdf.factor">
+    <priority value="DEBUG" />
+    <appender-ref ref="BES_OM" />
+  </category>
+  <category name="com.huawei.soa.bdf.function">
+    <priority value="DEBUG" />
+    <appender-ref ref="BES_OM" />
+  </category>
+只开启因子和函数相关的debug日志打印，减少其他bdf的debug日志的干扰。
+20	代码复用，因子、函数、Groovy原生函数、闭包的使用
+20.1	【规则】通用业务场景，可以抽象成因子、函数、上下文
+函数使用规范参见章节《5 Function》。
+20.2	【规则】单一业务场景，复杂逻辑需按单一职责原则抽取为Groovy原生函数后调用，Groovy函数要求放到文件最后，保障主逻辑的清晰、可读
+{
+...
+    def result = this.&newFunction(param1, param2, param3);  // newFunction函数调用
+...
+}
+
+// Groovy原生函数定义
+def newFunction(param1, param2, param3) {
+	param1 = 1;
+	param2 = 1;
+	param3 = 3;
+	...
+	...
+	return ret;
+}
+20.3	【建议】合理使用闭包可以让代码更灵活、轻量、可复用，比如复杂结构体组装和转换
+如在transform文件中对请求结构体的组装（dsl的闭包用法）：
+builder.termExchangeReq(entity: "com.huawei.bes.inf.iot.SyncChangeTerminalReqWrapper") {
+    SyncChangeTerminalReq {
+        Header {
+            BeId(order?.beId as String)
+        }
+        Body {
+            BaseInfo {
+                BusinessSeq(oprSeq)
+                BusinessCode(order?.businessCode)
+            }
+        }
+    }
+}
+
+如在集合中过滤符合条件的offer实例：
+def cOfferList = supplenmentOffers?.findAll {
+it?.offeringBasic?.pOfferingInstId == orderItem.itemInstanceId
+}
+
+20.4	【规则】闭包中的return语句只是中断闭包的执行，并不是中断整个脚本并返回
+循环体中return的语义跟java中return语义是一样的，if(){}、for(;;){}、while(){}。
+而闭包中list.each{return }中return 类似continue，闭包中不支持break语句
+
+20.5	【规则】脚本中禁止使用AD前台定义的方法
+自验证单节点容器中ad和om联合部署，可以相互发现对方的类定义。但标准组网下ad和om分离部署，导致方法找不到。
+if(isNotEmptyAndLGZero(invoiceItemInfo.amount)) // 错误示例
+
+20.6	【规则】entity生成序列要使用splitTableSequence来生成，其他函数不支持水平分库；同时要保证不同entity类型的序列不能混用。
+如商品订单项使用 : 
+it.itemInstanceId = splitTableSequence ('com.huawei.bes.cm.base.subscription.InfOfferingInstEntity',["prePartitionId":$partyRoleId])
+产品订单项使用:
+it.itemInstanceId = splitTableSequence ('com.huawei.bes.cm.base.subscription.InfProdInstEntity',["prePartitionId":g_orderOwnerId])
+上面两个不同entity的序列不能混用，如prodInstId使用了offerInstId的序列号，如果两者的序列号相差很接近，就会出现主键冲突的问题。
