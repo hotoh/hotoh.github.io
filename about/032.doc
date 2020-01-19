@@ -1,0 +1,304 @@
+Gateway Rest服务开发步骤示例
+1. 提供Java service类
+service操作POJO、VO等数据模型，负责App Server端业务逻辑处理，通过ebus配置restful发布出去供前台Web Server调用。 待发布服务示例：
+
+import java.util.ArrayList;
+import java.util.List;
+public class ItemTypeService
+{
+    public List<ItemTypePojo> queryItems()
+    {
+        List<ItemTypePojo> list = new ArrayList<ItemTypePojo>();
+        ItemTypePojo show;
+        for (int i = 0; i < 10; i++)
+        {
+            show = new ItemTypePojo();
+            show.setIconPath("iconPath");
+            show.setItemClassiId("ClassiId" + i);
+            show.setItemClassiName("itemClassiName");
+            show.setItemTypeCode("itemTypeCode");
+            show.setItemTypeId("TypeId" + i);
+            show.setItemTypeName("itemTypeName");
+            show.setItemTypeDesc("itemTypeDesc");
+            list.add(show);
+        }
+        return list;
+    }
+    public void updateItem(ItemTypePojo pojo)
+    {
+        //just show data from post, the 'pojo' can be saved into db now
+    }
+    public boolean delItem(String itemTypeId)
+    {
+        //just show data from post, the 'pojo' of this 'itemTypeId' can be removed into db now
+        return true;
+    }
+    public void addItem(ItemTypePojo pojo, String itemTypeId)
+    {
+        //just show data from post, the 'pojo' and the 'itemTypeId' can be add into db now
+    }
+}
+2. 如何将App Server端Java service类中各方法发布成restful服务供Web Server端调用
+1). App Server端通过eBus配置方式发布REST服务的。所以需要先将上述定义的ItemTypeService类先发布成为ebus服务。
+如何发布eBus服务请参见eBus服务端开发示例。
+
+声明式发布服务示例：
+
+<?xml version="1.0" encoding="UTF-8"?>
+<beans xmlns="http://www.springframework.org/schema/beans"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:p="http://www.springframework.org/schema/p"
+    xmlns:util="http://www.springframework.org/schema/util" xmlns:ebus="http://www.huawei.com/schema/ebus"
+    xsi:schemaLocation="
+        http://www.springframework.org/schema/beans
+        http://www.springframework.org/schema/beans/spring-beans-3.0.xsd
+        http://www.springframework.org/schema/util
+        http://www.springframework.org/schema/util/spring-util-3.0.xsd
+        http://www.huawei.com/schema/ebus
+        http://www.huawei.com/schema/ebus/spring-ebus.xsd">
+    <description>ebus</description>
+    <ebus:exporter name="itemTypeServer" class="com.huawei.uee.rest.demo.ItemTypeService"></ebus:exporter>
+</beans>
+2). Web Server端通过配置*.rest.xml定义发布的ebus服务的服务调用路径及参数数据
+*.rest.xml通过IDE根据App Server端的ebus service的SDL生成，放置位置及字段的描述请参见配置参考。
+
+具体内容示例：
+
+<?xml version="1.0" encoding="UTF-8"?>
+<rests>
+    <!-- Directly calling the eBus service -->
+    <service provider="ebus:itemTypeServer" path="/itemtype">
+        <!-- Do not submit, only fetch data. -->
+        <operation path="/items" name="queryItems" http-method="post">
+        </operation>
+        <operation path="/updateitem" name="updateItem" http-method="post">
+            <!-- the reception of region from uee:fire module -->
+            <param></param>
+        </operation>
+        <operation path="/delitem" name="delItem" http-method="post">
+            <!-- the reception of param-id from uee:fire module -->
+            <param param="id"></param>
+        </operation>
+        <operation path="/additem" name="addItem" http-method="post">
+            <!-- the reception of region from uee:fire module -->
+            <param></param>
+            <!-- the reception of param-id from uee:fire module -->
+            <param param="id"></param>
+        </operation>
+    </service>
+</rests>
+说明：
+
+param节点顺序及个数必须对应后端服务方法入参的顺序及个数。UEE推荐业界标准restful对于方法参数顺序的定义：复杂对象放在参数首位，简单类型依次在后面。
+
+推荐使用region来承载前端到后端待传递对象；推荐使用param来传递简单类型，支持同时传递多个。
+
+上述在restful资源识别层面的语义和标注方式能力一致：
+
+import java.util.ArrayList;
+import java.util.List;
+import javax.ws.rs.POST;
+import javax.ws.rs.Path;
+import com.huawei.uee.web.Param;
+@Path("/itemtype")
+public class ItemTypeAnnoService
+{
+    @Path("/items")
+    @POST
+    public List<ItemTypePojo> queryItems()
+    {
+        List<ItemTypePojo> list = new ArrayList<ItemTypePojo>();
+        ItemTypePojo show;
+        for (int i = 0; i < 10; i++)
+        {
+            show = new ItemTypePojo();
+            show.setIconPath("iconPath");
+            show.setItemClassiId("ClassiId" + i);
+            show.setItemClassiName("itemClassiName");
+            show.setItemTypeCode("itemTypeCode");
+            show.setItemTypeId("TypeId" + i);
+            show.setItemTypeName("itemTypeName");
+            show.setItemTypeDesc("itemTypeDesc");
+            list.add(show);
+        }
+        return list;
+    }
+    @Path("/updateitem")
+    @POST
+    public void updateItem(ItemTypePojo pojo)
+    {
+        //just show data from post, the 'pojo' can be saved into db now
+    }
+    @Path("/delitem")
+    @POST
+    public boolean delItem(@Param("id")String itemTypeId)
+    {
+        //just show data from post, the 'pojo' of this 'itemTypeId' can be removed into db now
+        return true;
+    }
+    @Path("/additem")
+    @POST
+    public void addItem(ItemTypePojo pojo, @Param("id")String itemTypeId)
+    {
+        //just show data from post, the 'pojo' and the 'itemTypeId' can be saved into db now
+    }
+}
+3. 在Web Server端html、uslx中调用restful服务
+你可以在html、uslx中通过uee:fire标签通过service声明式的调用ItemTypeService提供的各restful API：
+
+调用queryItems写法：
+
+    <uee:fire init service="/itemtype/items" target="$Model.items"></uee:fire>
+调用updateItem写法：
+
+    <uee:fire service="/itemtype/updateitem" region="$Model.item"></uee:fire>
+调用delItem写法：
+
+    <uee:fire script="checkDelete($UI, $Get('$Fire'), this, $Rowdata.itemTypeId)"></uee:fire>
+        function checkDelete($UI, $Fire, scope, itemTypeId)
+        {
+            $UI.msgbox.confirm('Confirm','Sure to delete this record?', function(){
+                $Fire({
+                    service : '/itemtype/delitem',
+                    params : {id:itemTypeId},
+                    target : '$Page.delOK'
+                }, scope).onafter(function(){
+                    if(scope.$Page.delOK === true){
+                        for(var i = 0, ii = scope.$Model.items.length; i < ii; i++){
+                            if(scope.$Model.items[i].itemTypeId = itemTypeId){
+                                scope.$Model.items.splice(i, 1);
+                                break;
+                            }
+                        }
+                    }
+                });
+            });
+        }
+调用addItem写法：
+
+    <uee:fire service="/itemtype/additem" region="$Model.item" param-id="$Rowdata.itemTypeId" ></uee:fire>
+Gateway rest配置参考
+1. 配置文件清单
+UEE Gateway可以适配后台的普通REST服务和eBus服务，然后暴露给前台组件使用。
+
+说明：如何开发eBus服务请参见eBus服务端开发。
+
+配置文件清单如下：
+
+特性名称	配置文件名	存放路径	配置文件说明
+rest	*.rest.xml	classpath*:META-INF/*.rest.xml;classpath*:conf/*.rest.xml	REST服务定义文件
+exception	*.web.properties	classpath*:conf/uee.web.properties;/WEB-INF/conf/*.web.properties;/WEB-INF/classes/*.web.properties	exception配置
+2. REST配置文件
+REST配置文件"*.rest.xml"是REST服务定义文件。"*"号可以是任意文件名称。
+
+存放路径
+"*.rest.xml"的存放路径可以在"classpath*:conf/*.jaxrs.properties"中配置， 在"soa.jaxrs.base.properties"中定义了默认的统一配置，如下：
+
+#This property is used to specify the location pattern of rest define file, which split with ;.
+jaxrs.rest.xml.location = classpath*:META-INF/*.rest.xml;classpath*:conf/*.rest.xml
+参数说明
+配置项	说明	设置
+元素	元素属性
+rests	-	rest定义根节点	-
+service	-	rest服务提供者，当前支持两种类型：
+1、 ebus,格式ebus:xxx,将一个ebus服务发布为rest
+2、 pojo,支持spring bean和普通class，格式分别为spring:xxx和com.huawei.*	数据类型: 字符串
+说明：非必填字段，如果不填，要求每个operator都要写provider
+provider	rest服务提供者，当前支持两种类型：
+1、 ebus,格式ebus:xxx,将一个ebus服务发布为rest
+2、 pojo,支持spring bean和普通class，格式分别为spring:xxx和com.huawei.*	数据类型: 字符串
+说明：非必填字段，如果不填，要求每个operator都要写provider
+path	service的url路径 注：对于pojo场景，pojo标注的rest参数会被xml中配置的1+N覆盖	数据类型: 字符串
+说明：必填字段，以/开始
+consumes	指定rest服务的请求类型，当前支持：文件上传，值为multipart。	数据类型：字符串。
+说明：非必填字段，如果不填，默认处理请求的json数据。
+operation	-	rest service的具体operation，支持1+N，覆盖的key是provider+path（同service）	ebus场景下,provider中所有的operator是全发布出来的,这里可以不配operation
+name	对于pojo场景，这里的name就是具体的java方法名称；	数据类型: 字符串
+说明：非必填字段
+path	operation的url路径	数据类型: 字符串
+说明：非必填字段，如果不填则默认取name值
+consumes	指定rest服务的请求类型，当前支持：文件上传，值为multipart。	数据类型：字符串。
+说明：非必填字段，如果不填，默认处理请求的json数据。
+provider	同service里的provider属性	数据类型: 字符串
+说明：非必填字段，如果没有则默认使用service的provider
+http-method	http方法类型	数据类型: 字符串
+取值： POST、GET
+说明：必填字段
+param	-	rest服务的参数	如果配置成： <param></param>，则表示接收fire提交的region参数（不支持接收 多个region提交）。
+param	接收请求的url中参数名称	数据类型: 字符串
+说明：非必填字段
+path-param	接收请求的url路径参数名称	数据类型: 字符串
+说明：非必填字段
+query-param	接收请求的query参数名称	数据类型: 字符串
+说明：非必填字段
+配置样例
+REST配置文件配置样例如下：
+
+<rests>
+    <service path="/testserver" provider="ebus:testserver" >
+        <operation path="runstring" name="runString" http-method="post">
+            <!-- the reception of param-filename, param-num, param-filetype from uee:fire module -->
+            <param param="filename"></param>
+            <param param="num"></param>
+            <param param="filetype"></param>
+        </operation>
+        <operation path="runregionobj" name="runRegionObj" 
+            http-method="post">
+            <!-- the reception of region from uee:fire module -->
+            <param></param>
+            <!-- the reception of param-num from uee:fire module -->
+            <param param="num"></param>
+        </operation>
+    </service>
+    <service path="/helloserver" provider="ebus:helloserver" >
+        <operation path="querynamemeg/{name}/{id}" name="perfString" 
+            http-method="post">
+            <param path-param="name"></param>
+            <param path-param="id"></param>
+        </operation>
+        <operation path="querynamemeg" name="queryNameMeg" 
+            http-method="post">
+            <param query-param="name"></param>
+            <param query-param="id"></param>
+        </operation>
+    </service>
+</rests>
+param元素配置样例和属性设置对照详细说明如下：
+
+    <service provider="xxx" path="/test/{p2}">
+        <operation name="yyy" path="zzz" http-method="post">
+            <param param="p1"></param>
+            <param path-param="p2"></param>
+            <param query-param="p3"></param>
+        </operation>
+URL为: http://.../test/abc?p3=10
+
+path-param：表示test后面的abc。
+query-param：表示问号后的参数中指定名字的参数,配置样例中值为10。
+param：path-param和query-param是rest的标准参数获取方式，param是uee的扩展属性，行为如下:
+1.从fire提交的region+param参数中,根据指定的key(配置样例中是p1)，提取参数。
+2.如果在步骤1中无法提取参数，则使用query-param的逻辑从URL的?部分提取参数。
+参数名大小写的疑问
+由于html对属性名大小写不敏感，param-这种前端参数大写的话，dom里直接变成小些了，请求在后端会取不到参数值。这时候如果要用大写，推荐用params方式，分析过程可以参考，params用法参考。
+
+3. exception配置文件
+存放路径
+REST服务异常页面可以在：classpath*:conf/uee.web.properties; /WEB-INF/conf/*.web.properties; /WEB-INF/classes/*.web.properties中配置。 在"uee.web.properties"中定义了默认的统一配置，如下：
+
+uee.jaxrs.exception.view=/uslx/exception.uslx
+uee.jaxrs.exception.mode=popup
+配置说明
+uee.jaxrs.exception.view指定异常页面相对于webroot的路径，默认异常页面。
+uee.jaxrs.exception.mode指定异常页面是popup还是navigate模式。
+另外，还支持配置不同类型exception的处理器，以返回业务所需数据。 例如配置UEEException的处理器，在*.service.xml增加如下配置：
+
+    <bean
+        class="org.springframework.beans.factory.config.MethodInvokingFactoryBean">
+        <property name="targetObject" ref="jaxrs.exception.processors" />
+        <property name="targetMethod" value="register" />
+        <property name="arguments">
+            <list>
+                <bean class="com.huawei.uee.web.exception.UEEExceptionProcessor" />
+            </list>
+        </property>
+    </bean>
+注意：UEEExceptionProcessor中的name属性须指定为异常类的类名。
