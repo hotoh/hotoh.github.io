@@ -1,0 +1,218 @@
+21	使用DSL风格的代码
+21.1	【样例】使用集合的grep、each、any等方法来提高开发效率，如
+21.1.1	【样例】for+if遍历判断list，可以使用list.grep.each/list.any
+def result = false
+for (orderItem in FilterOrderItems)
+{
+    for (itemProp in orderItem.OrderItemProp)
+     {
+         if ('A' == itemProp.actionType && 'instPeriods' == itemProp.propCode)
+         {
+            result = true
+            break
+         }
+     }
+    if (result)
+     {
+         break
+     }
+}
+return result
+ 可以简写成：
+FilterOrderItems.any{it.OrderItemProp.any{prop-> 'A' == prop.actionType && 'instPeriods' == prop.propCode}}
+
+21.1.2	【样例】list对象中子list对象的遍历（使用GPath语句）
+OrderModal下orderitemModel是个list，而orderitem、OrderItemRel都是list对象
+遍历OrderItemRel：
+root?.orderitemModel?.each{
+ it?.orderitem.each{item->
+   item?.OrderItemRel?.each{itemRel->
+    itemRel?.relatedInstId=root?.orderitemModel?.orderitem?.grep{it.orderItemId == itemRel.relatedOrderItemId}[0].itemInstanceId
+    }
+ }
+}
+可以简写成：
+  root?.orderitemModel?.orderitem?.OrderItemRel?.each{ itemRel->
+	itemRel?.relatedInstId=root?.orderitemModel?.orderitem?.grep{it.orderItemId == itemRel.relatedOrderItemId}[0].itemInstanceId
+  }
+
+GPath:
+Thanks to the support of property notation for both lists and maps, Groovy provides syntactic sugar making it really easy to deal with nested collections, as illustrated in the following examples:
+def listOfMaps = [['a': 11, 'b': 12], ['a': 21, 'b': 22]] 
+assert listOfMaps.a == [11, 21] //GPath notation 
+assert listOfMaps*.a == [11, 21] //spread dot notation 
+listOfMaps = [['a': 11, 'b': 12], ['a': 21, 'b': 22], null] 
+assert listOfMaps*.a == [11, 21, null] // caters for null values 
+assert listOfMaps*.a == listOfMaps.collect { it?.a } //equivalent notation // But this will only collect non-null values assert listOfMaps.a == [11,21]
+
+21.1.3	【样例】请求转换之后的订单项遍历
+def orderModel = $BindingContext("orderContext")._OrderModel
+if (orderModel) {
+    def orderitemModelList = orderModel.getOrderitemModel()
+    if (orderitemModelList)
+    {
+        mainOfferItem  = orderitemModelList.find {
+            null != it.orderitem && "offering" == it.orderitem.itemType && it.orderitem.isMainItem == "Y"
+        }
+    }
+}
+def acctIdTemp = null
+if(mainOfferItem){
+	acctIdTemp = mainOfferItem.orderitem.accountInfo?.accountInfo?.acctId
+log.debug "======Inft acctIdTemp ====" + acctIdTemp
+}
+可以简写成：
+def orderModel = $BindingContext("orderContext")._OrderModel
+def acctIdTemp = orderModel?.order?.OrderItem?.grep{it.itemType=="offering"&&it.isMainItem == "Y"}[0]?.
+accountInfo?.accountInfo?.acctId
+log.debug "acctIdTemp1: " + acctIdTemp
+
+订单请求转换脚本执行完毕后，om框架会复制OrderModel.OrderitemModel中的OrderItem 到OrderModel.Order.OrderItem 中，所以只需要遍历
+orderModel?.order?.OrderItem即可。
+
+21.2	【样例】过滤map时可以使用filter能力
+map FilterOrderItems, as:'orderitem', {
+    when(OrderItemConsts.ActionType.ADD.equals(orderitem.actionType))
+    {
+    }
+}
+// 推荐写法1
+map(FilterOrderItems, as:'orderitem').filter{orderitem.actionType == OrderItemConsts.ActionType.ADD}{       
+}
+// 推荐写法2
+map(FilterOrderItems.grep{it.actionType == OrderItemConsts.ActionType.ADD}, as:'orderitem'){       
+}
+
+21.3	【样例】map函数的闭包参数里，可以通过return来实现java中for循环中continue的效果
+  map invoiceItemInfoList, as:'invoiceItemInfo',
+  {
+            log.debug "CommSyncBilingPayment2ARTransf builder step 2:"
+            if (invoiceItemInfo.amount == null || invoiceItemInfo.amount <= 0)
+            {
+                return
+            }
+            if( invoiceItemInfo.amount < 0)
+            {         return;
+}
+                                      }
+}
+map函数实现里(appmw-bdf-6.1.xx.RCxxxx.xxxxcar\
+com.huawei.soa.bdf.component.script.impl-6.1.xx.xxx.jar\com.huawei.soa.bdf.script.transformation.TransformerBaseScript#map)  相当于遍历invoiceItemInfoList，对于里面的每个元素调用{}这个闭包，return只是结束本次闭包的调用，进入下次闭包调用，类似java的comtinue。
+如果retrun语句在闭包的开始，建议使用map的filter能力直接从循环列表中剔除掉。
+
+21.4	【规则】对象属性的操作禁止使用set/get方法
+def beId = order.getBeId() //错误样例
+def beId = order.beId     //正确样例
+第一种写法在去掉vo所在meta.sdk包时会报get/set方法找不到的错误，为了套件之间解耦后续会进行去meta.sdk的。
+
+21.5	【样例】使用三元操作符代替if/else:
+if (string!=null && string.length()>0) {
+    result = 'Found'
+} else {
+    result = 'Not found'
+}
+可以这么写：
+result = (string!=null && string.length()>0) ? 'Found' : 'Not found'
+根据Stirng的false/true规则，可以简单写：
+result = string ? 'Found' : 'Not found'
+ 
+displayName= user.name ? user.name : 'Anonymous' 等同于
+displayName= user.name ?: 'Anonymous'
+21.6	【样例】脚本中的判断字符串是否相等建议使用操作符"=="，不相等直接使用操作符"!="；
+if('R'.equals(rela.relationType)) // 错误示例
+if('R' == rela.relationType) // 正确示例
+ 
+21.7	【规则】创建om以外的entity对象时(即跨bc创建entity)，不需要使用use(RemoteEntityCategory)
+$BC("com.huawei.bes.cm.biz.customer4telecom").QueryAccountDetailRequest.make()。
+use(RemoteEntityCategory) 
+{
+    $BC("com.huawei.bes.cm.biz.customer4telecom").QueryAccountDetailRequest.make() // 错误示范
+}
+$BC("com.huawei.bes.cm.biz.customer4telecom")表达式最终返回BusinessComponentWrapper对象，而
+$BC("com.huawei.bes.cm.biz.customer4telecom").QueryAccountDetailRequest会返回ViewObjectWrapper对象，通过ViewObjectWrapper的make方法进行vo创建，不需要使用RemoteEntityCategory扩展。
+参考bdf代码：
+appmw-bdf-6.1.xx.RCxxxx.xxxxcar\com.huawei.soa.bdf.component.script.impl-6.1.xx.xxx.jar里：
+com.huawei.soa.bdf.script.GroovyBaseScript#invokeMethod
+com.huawei.soa.bdf.script.wrapper.BusinessComponentWrapper#getProperty
+
+use(RemoteEntityCategory)创建其他套件enity方式不再推荐使用，因为写法略复杂，而且有性能问题。
+主要是看括起来的地方占用多少时间，如果调用的服务本身就必要耗时 还是比较明显的
+use语法会给某个class对象加锁，并发环境测试，此锁一直被争抢。
+21.8	【规则】com.huawei.bes.om.base.order包路径下entity的创建（即同bc里创建entity），直接enity.make()即可；
+如：def newOrderItem = OrderItem.make()
+21.9	【建议】同一个编译单元(脚本片段)中$BC方法多次调用并入参相同的场景，建议相同bcName的$BC调用只调用一次，后续的调用使用第一次调用的结果，提高运行效率。
+def propBasicInfo =  $BC("com.huawei.bes.business.telecom.order.core").PropBasicInfoVO.make(["propInstId" : prop.propInstId, "propId" : prop.propId]);
+def propInfo  = $BC("com.huawei.bes.business.telecom.order.core").PropInfoVO.make(["operType" : "M", "propBasicInfo" : propBasicInfo]);
+//推荐写法如下：
+def orderCoreBcWrapper= $BC(Constant.BUSINESS_BC_ORDER_CORE)
+def propBasicInfo = orderCoreBcWrapper.PropBasicInfoVO.make(["propInstId" : prop.propInstId, "propId" : prop.propId]);
+def propInfo = orderCoreBcWrapper.PropInfoVO.make(["operType":"M","propBasicInfo":propBasicInfo]);
+$BC("com.huawei.bes.business.telecom.order.core").PropBasicInfoVO.make(["propInstId" : prop.propInstId, "propId" : prop.propId])
+$BC函数会new一个临时对象BusinessComponentWrapper，BusinessComponentWrapper.PropBasicInfoVO又会生成一个临时对象ViewObjectWrapper，最终调用ViewObjectWrapper.make方法生成vo对象，因此通过变量缓存BusinessComponentWrapper临时对象，既可以提高运行效率又书写简单。
+
+21.10	【规则】使用平台提供的API解析LOB字段:
+def verticalMap = orderItem?.verticalMap
+ if (verticalMap && verticalMap?.subscriberInfo && verticalMap?.subscriberInfo?.field0)
+ {
+     def subsField0 = new org.json.JSONObject(verticalMap?.subscriberInfo?.field0)
+      subsId = subsField0?.subsId;
+     log.debug "####me subsId is " + toJSONString(subsId)
+}
+代码取出了verticalMap下的subscriberinfo的json串中subsid对象，
+这种做法本身就不兼容平台解析CLOB字段的可配置能力，一旦平台配置改了就没法用，但使用平台API就不会有这个问题。
+取值直接修改为$mainOrderItem. subscriberInfo?.subsId
+BDF平台提供了能力，verticalMap里面的对象都可以直接获取，不需要专门读取字符串。
+
+21.11	【废弃】脚本中禁止使用import语句，不允许定义class和方法。
+平台脚本引擎的沙箱默认是开着的(com.huawei.soa.bdf.component.script.impl-6.1.20.B124.jar\sandbox.properties)，沙箱开启的时候java一些语法不允许使用,如在沙箱开着的时候是不允许import new这些关键字的。但是当前的现状我们业务bp把沙箱给关了(/home/ubizb/opt/container/webapps/bes/WEB-INF/classes/config增加了沙箱配置文件sandbox.properties)，这样groovy实际基本可以使用java里的一切语法。需要import的类建议统一封装函数。
+22	上下文
+22.1	【规则】上下文中的key不可修改。修改上下文中的key会导致上下文泄露
+如果key是简单类型，修改会报错。
+但是如果key类型是entity，直接修改这个entity内部的值，平台无法监控没有做到及时报错。
+典型错误代码示例：
+Context orderContext = contextFacade.createBusinessContext("orderContext", "111");
+orderContext.set("currentOrder",new BigDecimal(123));
+ // 构造上下文key
+ViewObject viewObject = new ViewObject("com.huawei.bes.pc.base.inquirybc.QueryOfferContractsRequest");
+viewObject.set("id",new BigDecimal("123"));
+ContextMap product = (ContextMap) orderContext.get("pcQueryOfferContractsContext");
+Context context = product.get(viewObject);
+ // 修改了上下文key，会导致上下文泄露
+viewObject.set("anyField","changed")
+22.2	【规则】上下文能取到的数据， 就不需要传来传去。
+def cbsFlag = com.huawei.bes.common.config.ConfigHelper.getShareConfig().getString("OM_TO_OTHER_BILLING_SYSTEM")
+def cbsFlag = "CBS";  
+22.3	【规则】后台业务开发、定时任务、接口开发过程中，设置上下文时，必须包含的如下5个键值
+"常用的下面五个： BE_ID、BIZ_BE_ID、OPERATOR、DEPT_ID、CHANNEL_TYPE，基本上能满足99%业务要求"
+示例：
+commonGetContextAccessor().setOperator(map.get("operator"));
+commonGetContextAccessor().setBeId(map.get("beId"));
+commonGetContextAccessor().setDeptId(map.get("deptId"));
+commonGetContextAccessor().setChannelType(map.get("channelType"));
+commonGetContextAccessor().setBizBeId(map.get("bizBeId"));
+
+22.4	【规则】单个订单后台业务流程（校验、转换、OPU）中，获取三户、产商品等信息时，很多都是调用BS服务直接查询的数据库；后续可以直接使用订单上下文，减少数据库访问次数，提升订单受理性能（首次使用，上下文没有会查库，后续直接取上下文，走缓存），该能力为OM套件提供，定制侧可以进行补充定制，例如添加项目信息等；对于批量订单，当前没有相关配置，还无法使用
+示例：
+def curOrder = $BindingContext("orderContext")._OrderModel?.order;
+def queryCustomerDetailRequest = $BC("com.huawei.bes.cm.biz.customer4telecom").QueryCustomerDetailRequest.make([custId: curOrder?.partyRoleId, beId: curOrder?.beId]);
+def customerDetail = $BindingContext("orderContext").ExtCMQueryCustomerDetail[queryCustomerDetailRequest].QueryCustomerDetailResponse;
+23	缓存
+23.1	【规则】将不经常变动的高频率访问数据存储到common缓存中，从而提高数据的访问速度，减少对数据库的访问次数。此类操作需要se专家评审后添加，禁止自行使用该能力。
+Common缓存介绍：http://bes.huawei.com/common/doc/guide/#/item/cache-operate-management
+
+
+
+代码举例：
+def cacheLoad = com.huawei.bes.common.facade.FacadeFactory.getCacheFacade().get("bes-lru-sm-MenuRelation", queryCacheKey);  //缓存查询
+com.huawei.bes.common.facade.FacadeFactory.getCacheFacade().put("bes-lru-sm-MenuRelation", queryCacheKey, response);  //添加缓存
+涉及归档表：bespub.inf_cache_item
+24	安全
+24.1	【规则】禁止在代码、注释、配置文件、数据库中出现明文密码
+24.2	【规则】禁止在业务响应报文、业务日志、运行日志中出现敏感数据明文，提供查看真实信息的功能需要有权限/令牌控制并通过一次性token或动态验证码防止批量查询。敏感信息：密码、客户姓名、证件号码、各类地址信息、银行账号/卡号
+24.3	【规则】禁止在日志（文件和数据库）中打印敏感数据明文
+不打印或以星号代替，如果在日志查询和审计时需要查看真实内容，则应该由用户自行根据订单号查询相应记录。
+25	参考资料
+脚本实际开发问题举例：http://rnd-github.huawei.com/bes-om/optimizor/issues/295
+业务脚本语言参考：http://digitalstudio.huawei.com/docs/doc/zh/v3r5c11rc1/dev-script/
+groovy语言规范 ：http://docs.groovy-lang.org/latest/html/documentation/#_functional_programming
+
