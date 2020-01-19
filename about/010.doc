@@ -1,0 +1,180 @@
+约定
+规则：编程时必须遵守的约定。
+建议：编程时必须加以考虑的约定。
+说明：对此规则/建议进行必要的解释。
+示例：对此规则/建议从好、不好两个方面给出例子。
+术语和缩略语清单（对本规范中使用术语的明确和澄清）： 
+术语	说明
+函数	函数（Function），指通过元数据定义出来的函数。本开发规范、及二次开发文档等资料中，所使用的“函数”均是指元数据函数。
+举例：
+<entity-data>
+	   <function name="getNowDate" display-name="获取当前时间"
+Groovy原生函数	Groovy原生语法函数。
+举例：
+    def toTriple(n) {
+        return n * 3;
+}
+闭包	闭包就是一段代码块，具有独立的作用域，在花括号内定义。例子：
+{n -> n * 3}
+与Groovy原生函数的语法区别。函数，函数名后紧跟着参数，如函数举例中的toTriple(n)，而闭包的所有代码都在{}内，包括其入参，入参在{与->之间，如闭包示例中的{n ->。
+另外，闭包较典型的用法为：将闭包赋给变量，然后将变量以类似函数的方式来调用。举例：
+def toTriple = {n -> n * 3}
+assert toTriple( 5 ) == 15
+另外，也可以通过闭包的call方法进行调用：
+assert toTriple.call( 5 ) == 15
+	
+	
+
+1	通用规范
+1.1	【规则】必须使用DS的Custom Explorer视图进行定制开发
+在bp_ctz层定制套件base层、套件ext层、基线bp层元数据时，定制规则与ds工具定制规则保持一致，必须使用ds工具定制，避免直接编写xml文件。
+ 
+ds工具操作元数据出现问题时，请检查工程配置，参考wiki : http://3ms.huawei.com/hi/group/1001599/wiki_5403891.html。
+定制的元数据问题汇总如下：
+元数据类型	定制场景	详细描述
+待补充		
+
+1.2	【规则】元数据displayname属性不能为空
+1.3	【建议】根据业务要求填写元数据description和note，要求语言清楚简洁、有实际意义。
+如：新增bs时接口协议和逻辑简介需要填写，新增opu时节点功能需要填写。
+1.4	【规则】描述类语言使用中文
+1.5	【规则】自动检查 元数据中脚本名称唯一  
+如：
+expression xsi:type="script" name="DSL161126162505"
+script name="DSL5d81199061bb4607b4ff503805e2d4f8" 等要保持脚本名字唯一。
+脚本在运行态会转换成java的class，class名可认为就是脚本的name。这些class会被脚本引擎缓存起来，索引key就是脚本名，所以脚本同名的情况下后加载的脚本会覆盖先加载的脚本，导致运行时可能运行同名其他逻辑的脚本。另外定制transform ruler时，虽然是针对
+transformation-rule的name进行覆盖定制，但里面的脚本名字也建议保持唯一。
+查看jar包中是否存在同名脚本的命令：
+find ./ -name *.jar -exec zipgrep 'DSL161126162505' '{}' \;
+如在bes.customer.cars目录执行，会显示对应文件名，查看文件名所在jar，可以使用如下命名：
+grep -nr CommCreateOrderRequestTransf.transf.xml *
+1.6	【建议】订单流程中的groovy脚本，定义了内部变量的尽量使用内部变量。
+使用框架内置变量写法简单明了，执行效率也高。
+注意，内置变量的使用禁止copy代码，“别人那么写，我也这么写”是不对的。
+同一类元数据的不同代码片段(*.bulkProcessor.xml里的req)，或者不同的订单流程上同一个元数据(*.orderProcUnit.xml里的_filterOrderItems)，同样的内置变量名表示的内容可能就不同，所以，使用前一定要先了解这个内置变量的使用背景。
+单个订单常用内置变量详见二次开发文档： http://bes.huawei.com/hedex/hdx.do?lib=commerce25100&v=01&tocLib=commerce25100&tocV=01&id=om_dev_00127&tocURL=resources%252fboms%255fdev%252fboms%255fdev%252fom%252fom%255fdev%255f00127%252ehtml&p=t&fe=1&ui=3&keyword=%25u53d8%25u91cf&keyword=%25u5185%25u7f6e
+批量内置变量详见：待补充
+
+编码举例：此处curOrder.OrderItem 可用_filterOrderItems替换。
+<transformation name="SyncInfoToTransPtPFransf" display-name="同步运管平台" note="同步运管平台">
+  <bind-variable name="_filterOrderItems">
+    <source-object-ref ref-name="com.huawei.bes.om.base.order.OrderItem"></source-object-ref>
+  </bind-variable>
+  <target-object-ref ref-name="entity:com.huawei.bes.inf.iot.SyncServiceReqWrapper"></target-object-ref>
+  <transformation-rule name="SyncInfoToTransPtPFransfRule" display-name="同步第三方平台接口入参转换">
+    <script name="DSLSyncInfoToTransPtPFransfRule31033"><![CDATA[
+  def curOrder = $BindingContext("orderContext")._OrderModel.order;
+  def orderOffer = curOrder.OrderItem.findAll{it.isEnrichment == 'N'&&it.itemType == 'offering'};
+。。。。
+。。。。
+
+1.7	【建议】订单流程中，优先使用绑定上下文BindingContext，其次是service
+def queryOfferingIdList = [];
+queryOfferingIdList.add(orderitem.itemId as BigDecimal);
+def req = $BC("com.huawei.bes.pc.base.inquirybc").QueryOfferingsRequest.make(["offerIdList" : queryOfferingIdList]);
+def response =  $BindingContext("orderContext").ExtPCQueryOfferings[req].QueryOfferingsResponse; // 推荐使用
+//def response = callBusinessService("com.huawei.bes.pc.base.inquirybc.OfferingQueryService", "queryOfferings", req);  // 不推荐使用
+offerDetails = response?.offeringList;
+def order = $BindingContext("orderContext")._OrderModel?.order; // 推荐使用
+def bulkModel = $BindingContext("bulkContext")._BulkModel  // 推荐使用
+1.8	【规则】修改数据库字段含义，务必提供历史数据的割接方案
+1.9	【规则】新建bp工程（CASE）后，需要将product工程里添加的相应配置归档SVN，确保工程可以正常导入DS工具。配置文件路径为 /trunk/DigitalCRM_IOT_CTZ.product/src/main/resources/product.xml 。
+1.10	【规则】处理流程复杂，次数相对有限的操作，最好能支持记录异步日志， 以便问题分析定位SM asyncTask异步任务查询 http://3ms.huawei.com/hi/group/2033417/wiki_4912247.html。
+1.11	【规则】开发要考虑代码中异常场景，例如用户不存在、用户跟客户不匹配等。
+如：
+//校验入参
+if (!req.custId) {
+    resp.result = false;
+    resp.respMessage = "用户ID为空";
+    return resp;
+}
+1.12	【规则】销售规则也要遵守代码规范，也要提交评审，评审通过再提交管控。
+1.13	【规则】对于Trigger、定时任务拉起的订单(单个&批量)，没有处理订单创建结果，导致失败订单无法及时处理。是否需要记录异常信息, 参考IR_OR_CMIOT_INTERNAL_20190611_04【内部-改进优化】Trigger中创建订单优化。
+--记录创建订单异常信息
+def request = $BC("com.huawei.bes.common.base.bulk").CreateBulkRequest.make([ 
+    requestHeader: requestHeader,
+    bulkBody: bulkBody, 
+    isNeedBulkFailedInfo: true 
+]);
+关键是 isNeedBulkFailedInfo: true
+1.14	【规则】定时任务拉起的批量订单开发要设置正确的操作员及上下文信息。
+operator = com.huawei.bes.common.config.ConfigHelper.getShareConfig().getString("OM_CutOver_Virtual_Operator_ID", "101", req.beId as String);//查不到默认101
+commonGetContextAccessor().setOperator(operator);
+commonGetContextAccessor().setBeId(req.beId as String);
+ommonGetContextAccessor().setBizBeId(req.beId as String);
+commonGetContextAccessor().setOperatorType('E')
+1.15	【规则】对于数据量较大的表进行操作时，需要考虑dds超时时间。生产目前dds超时时间为10秒，如果10秒还没执行完DDS就会报错。
+1.16	【规则】查询服务必须考虑排序，如果批量数据的创建时间一致，可以考虑主键排序或者创建时间+主键排序，排序一般都是倒叙。
+参考ProMobtelPresaleDetail.ec.xml
+<criteria name="queryProMobtelPresaleDetailByCond" cache-type="none" order-by="oId DESC">
+1.17	【规则】 新建工程添加依赖，必须要核对修改版本号，如果依赖基线版本，版本号必须与当前版本匹配。对套件的依赖需要按照层次关系进行依赖，底层的套件不能依赖上层的套件。指定MDE实施新建工程。
+1.18	【规则】 已上线的菜单权限，禁止修改权限ID，如果必须修改，需要割接已上线的角色权限相关的实例化数据，不能影响客户使用。
+1.19	【规则】 订单履行或者订单履行成功以后，同一事务下，新增非核心处理（比如记录日志），必须加异常捕获的处理，不要影响正常业务受理。
+如：IotCtzOmMidSubscriberConsignService.bs.xml
+ 
+1.20	【规则】 新增定时任务，需要提交物联网公司BE（1002）。
+新工具承载：支持domain，group，corn自动生成全量BE的定时任务
+1.21	【规则】 批量更新数据时，应优先使用BDF批量操作框架，以减少sql执行次数，提高效率。
+1.22	【规则】 提供查询接口时，控制类型的入参，传值为空时应默认为N，不能默认为Y。
+1.23	【规则】 开发版本只提供创建权限，具体的角色配置由客户进行配置，分工明确。
+1.24	【规则】 在现有接口中增加代码时，注意终止性代码的使用，例如return等，会影响其他代码的执行，可通过封装单独BS减少对其他代码的影响。
+1.25	【规则】 批量订单预校验（首行校验）要配置 IOT_BULK_PRE_VALIDATION 字典项才会生效。
+现在好多开发不知道，每次出现问题从批量框架日志开始定位，浪费很多时间。
+2	Entity
+2.1	【规则】定制Entity元数据中不允许包括_c标记
+为了区分出定制字段，工具自动生成_c标记，但实际应用时，定制侧并不关注哪些是定制字段。
+为了保持代码简洁一致，定制侧不允许加_c，对工具自动生成的_c，请在source视图下删除。
+2.2	【规则】简单属性须配置attribute；复杂属性(如 entity、list[entity])须配置element
+如果复杂属性配置为attribute，BDF可能会解析失败，导致只有部分入订单项纵表或者入纵表后读取失败。
+场景1：
+<entity name="OrderItemReason" package-name="com.huawei.bes.om.extpub.plugin" persist-type="xml">
+<field name="reasonInfo" type="list[entity:com.huawei.bes.om.extpub.plugin.ReasonInfo]" xsd-attribute-name="ReasonInfo" description="业务办理原因码">
+</field>
+</entity>
+以上为错误示例。
+
+以下为正确示例：
+<entity name="OrderItemReason" package-name="com.huawei.bes.om.extpub.plugin" persist-type="xml">
+ <field name="reasonInfo" type="list[entity:com.huawei.bes.om.extpub.plugin.ReasonInfo]" is-xml-element="true" xsd-element-name="ReasonInfo" description="业务办理原因码">
+</field>
+ </entity>
+参考：http://3ms.huawei.com/hi/group/2028593/wiki_4626011.html  销户原因不能正确入到订单项纵表中
+http://digitalstudio.huawei.com/docs/doc/zh/v6r1c30/guide/#/item/entity-data-faq
+
+场景2：
+<entity name="OrderItem" package-name="com.huawei.bes.om.base.order" table-name="OM_ORDER_ITEM"> 
+<field name="customerData" field-storage-type="vertical-table" type="entity:com.huawei.bes.om.ext.tele.order.frame.plugin.CustomerData" description="CDM客户信息。"/>
+</entity>
+ 
+<entity name="CustomerData" package-name="com.huawei.bes.om.ext.tele.order.frame.plugin" persist-type="xml" xml-namespace="http://bes.huawei.com/om/order/fundation/intf/orderbasetype/" xml-schema-location="metadata/view-object/om.order.type.xsd" xsd-element-name="CustomerData">
+    <field description="客户数据" name="customerData" type="entity:com.huawei.bes.cm.biz.customer4telecom.CustomerDetailViewEntity" xsd-attribute-name="CustomerData"/>
+    <field description="操作标示" name="opCode" type="text(1)" xsd-attribute-name="opCode"/>
+  </entity>
+
+OrderItem中定义了纵表字段CustomerData，创建订单结束后，数据以xml格式存储到纵表，履行时orderItem.customerData.customerData 返回结果为null，异常，orderItem.customerData.opCode返回结果有具体的数据，正确。将xsd-attribute-name="CustomerData"修改成xsd-element-name="CustomerData" 后，便可以正常orderItem.customerData.customerData 取值。
+
+2.3	【规则】禁止将DBEntity作为服务出参，需要转换为ViewEntity，或者直接使用QueryEntity。
+2.4	【规则】新增数据库操作接口时，对表的增删改查操作要体现在命名上。
+2.5	【规则】禁止在查询类接口中对数据库执行增删改等非查询类操作。
+2.6	【建议】专家模式对开发要求较高，非必要时不得使用专家模式。新增专家模式查询要考虑是否涉及分库因子、路由因子、白名单、性能等。
+2.7	【规则】专家模式中禁止使用绑定参数，如<where><![CDATA[<%${bindCond}%>]]></where>。
+2.8	【规则】新增DBEntity按要求设置分库信息、序列范围
+对于om\cm套件下的DBEntity：
+默认cm序列长14位，om序列长16位（se特别要求的除外）；
+不分库：entity配置disable-sharding="true"；
+一级分库：entity 的disable-sharding="true" 时，配置beId 的 is-partition-key、required ；disable-sharding="false"或缺省时，sharding-rule="ByField(beId)"，beId 的 is-partition-key、required，默认路由因子PUB_ID；
+二级分库：entity 的sharding-rule="ByField(beId, 二级分库字段操作div/mod信息|…|…)"，beid 的is-partition-key、required。
+
+其他套件下的DBEntity：
+不涉及二级分库；
+一级分库：entity只需配置beId 的 is-partition-key、required。
+
+更多分库资料请见 http://3ms.huawei.com/hi/group/1001599/wiki_5341925.html?for_statistic_from=all_group_wiki
+2.9	【规则】 createTime、createProleType、create***、modifyTime、modify*** ，新增或者修改表记录时，这些字段要默认设置值。
+2.10	【规则】禁止定制基线的EC。
+2.11	【规则】CM套件模型定义为cdm模型，要求所有类型为entity的成员必须同步修改为cdm模型。如果做了定制扩展，新增entity成员（包括子entity成员）也需要同步修改，在discription中追加@cdm标识符。
+参考wiki：http://3ms.huawei.com/hi/group/1001599/wiki_5517341.html
+示例：
+ 
+子entity:
+ 
