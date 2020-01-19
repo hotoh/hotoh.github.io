@@ -1,0 +1,230 @@
+12	Transformation
+12.1	【规则】Transformation命名规范
+Transformation命名采用分层四段式结构，每一段英文拼写采用驼峰式，结构为：[模块]+[业务语义]+Transf；
+[模块] 同OPU命名中的模块，分为：Om、Sm、Cm、Common、Inv、Pm、Cbs、Prov、Prom、Bp、Oss、Shipping、OneLink（运管平台）、BOSS（省BOSS）、BBoss（一级BOSS）、EBOSS（政企平台）、CTRM （一级营销终端管理系统）等其它 “第三方系统缩写”
+[业务语义] 采用富有意义的英文词汇，驼峰式拼写，例如改用户状态：ChangeSubsStatus
+ 
+综上命名规范，举例命名如下：
+客户资料归档  CmCustInfoArchiveTransf
+号卡资源回收  InvTelAndSimRecycleTransf
+物流发货      ShippingSendOutGoodsTransf
+帐户资料同步  CbsAcctInfoSyncTransf
+施工通知OSS   OssConstructionNoticeTransf
+
+12.2	转换脚本
+12.2.1	【规则】创建返回值对象上子enity对象时使用builder，不允许使用entity.make()
+转换脚本中第一次使用类似builder.OrderModel{}代码时，会生成根节点的对象，脚本中通过builder.root和root这两个绑定变量来访问。通过trigger-point触发执行的脚本中再执行builder.order{}创建OrderModel子对象时，生成的enity会自动挂在到OrderModel节点下，而Order.make()生成的对象是游离在根节点之外的，需要手动赋值到根节点对应节点下。Order.make()创建的对象中有子对象是entity，需要重新调用entity.make创建，而builder创建对象中有entity的子对象可以直接通过闭包初始化。
+
+12.2.2	【规则】创建返回值对象上子enity对象时通过trigger-point使用builder.subscriberInfo{}这种方式，不允许使用指定entity类型的方式builder.subscriberInfo(entity:'com.huawei.bes.om.extpub.plugin.SubscriberInfo') {}. 
+builder.subscriberInfo会被解析成一个方法调用，前者入参只有一个，即一个闭包，后面那种写法，两个入参一个Map，一个是闭包。通过trigger-point触发执行的脚本中再执行builder.subscriberInfo{}，会获取当前的节点的父节点，即currentNode这个绑定变量的取值,然后遍历父节点和subscriberInfo同名的属性，并把builder.subscriberInfo{}返回值设置成该属性的值。
+
+def subs=builder.subscriberInfo(entity:'com.huawei.bes.om.extpub.plugin.SubscriberInfo') {}会遍历父节点和SubscriberInfo同名的属性(OMFoudation框架代码bug？，即这样创建新节点名字是enity的类型而不是指定builder.subscriberInf。OME层修复了该问题)，而这样往往找不到对应的父节点属性导致无法挂载到父节点上，需要手动设置到父节点上，currentNode.subscriberInfo=subs
+详细参考：http://3ms.huawei.com/hi/group/2028593/wiki_4864585.html?for_statistic_from=all_group_wiki
+12.2.3	【样例】E层转换脚本(*.transf.ext.xml)增强的几个DSl语法
+1、TradeContactInfo(party.contactPersonInfo){
+    beId(req.order.beId)
+    orderId(g_OrderId)
+    createTime(getNowDate())
+    contactInfoId(l_ContactInfoId)
+}
+类似的语法，会遍历TradeContactInfo里字段，将字段的值设置成party.contactPersonInfo同名字段的值，然后执行后面闭包里逻辑。
+2、TradeContactInfo(party.contactPersonInfo){} 类似的语法(注意后面要跟个闭包参数)，实际上支持了vo类型的赋值初始化。F层转换只支持基础类型的初始化赋值而不支持VO。E层装换脚本也支持上面currentNode初始化vo的方式。
+3、builder.Order(entity:'com.huawei.bes.om.base.Order',req.order){} 类似的语法，创建指定类型的entity，使用req.order同名字段和后面闭包初始化
+
+12.2.4	【样例】F层转换脚本VO中的VO类型的field初始化
+F层转换脚本(*.transf.xml)不支持dsl中VO属性初始化,如：
+def olderOrder =Order.make()
+builder.OrderModel{
+order(olderOrder)
+}
+order(olderOrder)会报错。
+可以使用如下几种方式：
+    <transformation-rule display-name="Common_OrderModel(通用报文转换-OrderModel节点)" name="Common_OrderModel" note="通用报文转换-OrderModel节点。">
+      <script name="DSL161221173021qqq"><![CDATA[
+def olderOrder =Order.make()
+olderOrder.beId=11111
+builder.OrderModel{
+    _this.olderOrder=olderOrder //1
+        root.order=olderOrder     //2
+}
+]]></script>
+    </transformation-rule>
+   <transformation-rule display-name="Common_OrderModel_bizSpecType" name="Common_OrderModel_bizSpecType" note="Common_OrderModel_bizSpecType" trigger-point="OrderModel">
+      <script name="DSL161221173021xxx"><![CDATA[
+      currentNode.bizSpecType=BizSpec.make() //3
+]]></script>
+ </transformation-rule>
+第1种方式dsl语法创建节点执行闭包时会往binding设置绑定变量_this（e层没有这个绑定变量）,值就是新创建的节点vo，执行闭包之后移除这个绑定变量，所以闭包里_this之前不能有子闭包的语句
+builder.OrderModel{
+    order{}
+    _this.olderOrder=olderOrder 
+}
+这样order{}执行完毕会从binding里移除_this这个绑定变量，导致后面报找不到 _this定义错误。
+第2种方式 是从脚本引擎的设置的绑定变量root中根据数据结构逐级找到对应的属性进行赋值。
+第3种方式 trigger-point触发执行的ruler中框架会设置绑定变量currentNode，取值是上级节点vo。
+以上三种方式不是dsl构建，不会触发trigger-point机制，使用上述方式新建order节点，不会触发trigger-point="order"的ruler执行。
+推荐使用第3种方式。
+12.2.5	【样例】创建返回值对象是数组的类型的两种方式
+1 转换脚本*.transf.xml中
+<transformation config-type="Foundation" display-name="OmcoCreateOrderDocumentTransformation" name="OmcoCreateOrderDocumentTransformation">
+    <target-object-ref ref-name="java.util.List"/>
+转换脚本中使用
+map orderDocumentList, as:'documentList',
+{
+builder.InfAcctInvoiceBillEntity(entity:"com.huawei.bes.cm.base_reprintbillservice_c.component.InfAcctInvoiceBillEntity"){}
+}
+2 转换脚本*.transf.xml中
+<transformation config-type="Foundation" display-name="OmcoCreateOrderDocumentTransformation" name="OmcoCreateOrderDocumentTransformation">
+    <target-object-ref ref-name="list[entity:com.huawei.bes.cm.base_reprintbillservice_c.component.InfAcctInvoiceBillEntity]"/>
+转换脚本中使用
+def result=[]
+map orderDocumentList, as: 'documentList', {
+	result.add($BC("com.huawei.bes.cm.base_reprintbillservice_c.component").InfAcctInvoiceBillEntity.make())
+  }
+return  result;
+
+参考com.huawei.bes.om.base.order.core.transformation.FulfillmentTransfHelper#transformer代码
+第1种方式target-object-ref 是"java.util.List"情况，builder会生成一个ArrayList<Object>()类型的根节点对象，然后map循环通过
+builder.InfAcctInvoiceBillEntity构建的对象会自动挂载到这个ArrayList的根节点上，最终返回这个ArrayList。
+第2种方式，不能使用builder.InfAcctInvoiceBillEntity创建任何enity，需要保持builder.root为空，返回的是整个脚本的值即上面的result。
+
+13	变量命名
+13.1	【规则】因为平台脚本引擎对$做了特殊处理，脚本中变量不应再以$开头定义变量；
+$BC、$BP、$BindingContext、$Factor等都有特殊含义，不排除后续平台增加新的$开头变量的可能。
+另外日志里打印$开头变量名和变量值的时候
+log.debug"———-$mainOrderItem.Order is" + toJSONString($mainOrderItem?.Order)
+不注意容易报错：
+groovy.lang.MissingPropertyException: No such property: mainOrderItem for class: com.huawei.bes.om.base.order.DSL160918164823
+因为groovy双引号内字符串中$有特殊含义，groovy支持单个$进行占位符操作，如：
+def person = [name: 'Guillaume', age: 36]
+assert "$person.name is $person.age years old" == 'Guillaume is 36 years old'
+"———-$mainOrderItem.Order is" 中$后面的mainOrderItem会被当成一个变量，从而报上述错误。
+groovy单引号字符串跟java字符串一样，$没有特殊含义。
+ 
+13.2	【规则】因为om内置了部分以下划线开头的变量，脚本中变量不应再以下划线开头定义变量；
+http://bes.huawei.com/dev/ 搜索关键字 常用内置变量
+ 
+13.3	【规则】要对局部变量、绑定变量、全局变量进行命名区分
+全局变量建议以g_ 开头。
+局部变量建议小驼峰式命名法，第一个单词以小写字母开始，第二个以后的单词每个首字母大写。
+绑定变量使用下划线开头或者首字母大写驼峰式命名（om绑定变量当前使用的规范，bp开发基本不涉及绑定变量）
+g_beId  //ok,声明全局变量
+def firstName  //ok，声明局部变量
+_filterOrderItems //套件绑定变量，bp开发中不能使用此命名方法
+FilterOrderItems //套件绑定变量，bp开发中不能使用此命名方法
+def $mainOfferItem //bp开发中不能使用此命名方法,参考规范1.1
+ 
+13.4	【规则】禁止转换中节点的属性名与变量同名，这会导致运行报错；
+ def subsId = mainOrderItem.subsId
+paymentRelation
+{
+subsId(subsId)
+}
+Caused by: groovy.lang.MissingMethodException: No signature of method: java.math.BigDecimal.call() is applicable for argument types: (java.math.BigDecimal) values: [31000018005]
+Possible solutions: scale(), add(java.math.BigDecimal), max(java.math.BigDecimal), wait(), abs(), ulp()
+原因：闭包内属性和方法默认有如下查找规则，首先会查询owner内是否定义，没有的话再查询delegate内，这种情况会优先查到闭包owner定义subsId没有到delegate里查。正常情况会查询delegate内，而框架在调用DSL闭包时，将delegate指定为builder，最终走的是builder.invokeMethod 完成了subsId(subsId)的求值。所以问题本质是闭包的owner定义的临时变量subsId影响了paymentRelation 中subsId dsl的构建，subsId(subsId) 当成了名字是subsId的闭包的调用，而没有走builder.invokeMethod。
+参考：http://docs.groovy-lang.org/latest/html/documentation/#_delegation_strategy
+com.huawei.soa.bdf.script.transformation.TransfBuilderSupport#doInvokeMethod
+13.5	【样例】g_xxxx全局变量使用范围和场景
+全局变量主要的使用场景是订单转换文件(***.transf.ext.xml)，其他元数据除非必要，不建议使用
+在om套件的转换中，文件起始的rule里面会进行全局变量的定义，这样在套件转换文件和后续基线、定制扩展的转换文件中都可以直接使用这些全局变量，而不用重新定义和赋值。
+ 
+定制开发过程中，需要定制扩展转换文件时，可以在DS工具根据转换名字进行搜索，找到套件的转换文件，查看基线转换文件中定义的全局变量，在定制转换文件中进行使用；对于基线中未定义，定制侧需要跨多个rule用到的变量，可以在定制侧转换文件定义全局变量使用：
+实例：
+D:\BES_IOT\DigitalCRM-IOT\BES-IOT-CTZ\IOT_CorporationSubscriber_CTZ\om.ext\om.ext.tele.order.industry.plugin\src\main\resources\data\ExtTransformation\BaseCreateCorpSubsReqCtz.transf.ext.xml
+
+全局变量定义：
+def tmpGroupId = newSequence('com.huawei.bes.cm.base.subscription.InfSubscriberEntity', ["beId": g_beId, "ownerPartyRoleId": g_custId]);
+g_groupSubsId = tmpGroupId;
+…
+…
+…
+全局变量使用( 跨ext-transformation-rule 使用 )：
+builder.orderitem {
+.
+…
+…
+    applyObjId(g_groupSubsId);
+    groupSubsId(g_groupSubsId);
+14	【建议】集合初始化建议使用初始化列表语法，避免定义额外的临时变量
+1 def tax=getTax()
+2 def taxList= [];
+3 taxList.add(tax);
+4 fee.taxInfo = taxList;
+//1 2可以合并taxList=[tax],最终1234句可以合并简洁的一句
+fee.taxInfo =[getTax()]
+// map 类似
+15	【样例】脚本中判断对象是否为空，直接if(对象)即可
+if(rela.relationType != null) // 错误示例
+if(rela?.relationType) // 正确示例
+groovy判断表达式false/true,按照如下规则：
+可以参考这里的文档: http://groovy-lang.org/semantics.html#Groovy-Truth
+15.1	Boolean 表达式
+assert true
+assert !false
+
+15.2	Collections、Arrays、Maps
+非空的集合和数组返回true
+assert [1, 2, 3]
+assert ![]
+assert ['one' : 1]
+assert ![:]
+e.g.:
+def orderItem = $BindingContext("orderContext")._OrderModel.order?.OrderItem?.grep{it.accountInfo}
+def acctId = orderItem?.szie()>0 ? orderItem?.get(0)?.accountInfo?.acctId:null
+因为对于集合类型对象，进行非null和非空的判断可以简写成
+def acctId = orderItem? orderItem?.get(0)?.accountInfo?.acctId:null
+get(0)为了和java保持一致会抛出索引溢出异常，groovy支持[]运算符访问集合元素,[0]和get(0)一样访问第一个元素，索引溢出时直接返回null而不会抛出异常。所以进一步可以简写成：
+def acctId = orderItem[0]?.accountInfo?.accountInfo?.acctId.（注意确保orderItem不为null的状况，可以这么写）
+注意：null[0]还是会抛出异常的，grep不会返回null，所以可以简写成上面那样，综合考虑orderItem可以为null的场景，推荐写法如下
+def acctId = orderItem? orderItem[0]?.accountInfo?.acctId:null
+
+15.3	Strings
+非空的字符串返回true
+assert 'a'
+assert !''
+e.g.:
+if（!inventory.lockCode||inventory.lockCode==''）{}
+可以简写成
+if(!inventory?.lockCode) {}
+
+15.4	Numbers
+非0返回true
+assert 1
+assert 3.5
+assert !0
+
+15.5	Object References
+Non-null object references are coerced to true.
+assert new Object()
+assert !null
+
+15.6	【建议】map进行映射时不需要对source判空，map内部会对其参数进行合法性校验；
+if(null != invoiceInfo.invoiceItem){
+    map invoiceInfo.invoiceItem,as: 'invoiceItem',{
+        invoiceItem(entity:'com.huawei.bes.om.payment.facade.external.model.xmlvo.service.InvoiceItemInfo'){
+        }
+    }
+}
+// 建议写法             
+map invoiceInfo.invoiceItem,as: 'invoiceItem',{
+    invoiceItem(entity:'com.huawei.bes.om.payment.facade.external.model.xmlvo.service.InvoiceItemInfo'){
+}
+}
+ 
+15.7	【建议】脚本中先判断是否为null再取值的方式建议使用操作符"?."。
+if (!null.equals(accountInfo.acctBillMaill))
+{
+    if (!null.equals(accountInfo.acctBillMaill[0].referenceAddr))
+    {
+        if (!null.equals(accountInfo.acctBillMaill[0].referenceAddr.address))
+        {
+            def intfAddressVo = accountInfo.acctBillMaill[0].referenceAddr.address
+            postCode(intfAddressVo.postalCode)
+        }
+    }
+}
+// 建议修改
+def intfAddressVo = accountInfo?.acctBillMaill?.getAt(0) ?.referenceAddr?.address
+postCode(intfAddressVo?.postalCode)
+如果accountInfo或者accountInfo?.acctBillMaill或者 accountInfo?.acctBillMaill?.getAt(0)或者accountInfo.acctBillMaill?.getAt(0) ?.referenceAddr 为null，则intfAddressVo值为null，而不会抛出空指针异常。 
