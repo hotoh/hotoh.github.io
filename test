@@ -29,3 +29,18 @@ git remote prune origin
 
 set remote_branch=remotes/main/%var_branch%
 set local_branch=remotes/origin/%var_branch%
+set remote_branch_exists=0
+set local_branch_exists=0
+
+for /f  %%i in ('git branch -a') do ( 
+    setlocal enabledelayedexpansion
+    set curr_branch=%%i
+    if !curr_branch!==%local_branch% (
+        set "local_branch_exists=1"
+    )
+)
+
+if !local_branch_exists! equ 1  (
+        echo 分支已经存在，直接执行 "git checkout 分支名称" 即可!!
+        goto :end
+    )
