@@ -49,7 +49,7 @@ for /f "tokens=6 delims=./" %%j in ('git remote -v') do (
     setlocal enabledelayedexpansion
     set project=%%j
 
-    set git_addr=ssh://git@szv-y.codehub.huawei.com:2222/CMIOT-MALL/!project!.git
+    set git_addr=ssh://git@github.com/hotho/!project!.git
     echo !git_addr!
 
     git remote add main !git_addr! 
@@ -70,3 +70,24 @@ for /f "tokens=6 delims=./" %%j in ('git remote -v') do (
     
     goto :checkout
 )
+
+:checkout
+if !remote_branch_exists! equ 0  (
+        echo 分支名称不正确，请检查分支名称!!
+        git remote remove main
+        goto :end
+    )
+
+    git branch %var_branch% main/%var_branch%
+    git checkout %var_branch%
+    git pull main %var_branch%
+    git push origin %var_branch%
+    git remote remove main
+
+    goto :end
+    
+:end
+    pause
+    @popd
+    @endlocal
+    @echo on
